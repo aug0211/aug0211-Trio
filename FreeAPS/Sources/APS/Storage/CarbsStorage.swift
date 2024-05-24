@@ -45,14 +45,14 @@ final class BaseCarbsStorage: CarbsStorage, Injectable {
                 let carbEquivalents = (kcal / 10) * adjustment
                 let fpus = carbEquivalents / 10
                 // Duration in hours used for extended boluses with Warsaw Method. Here used for total duration of the computed carbquivalents instead, excluding the configurable delay.
-                var computedDuration = 0
+                var computedDuration = 1
                 switch fpus {
                 case ..<2:
-                    computedDuration = 3
+                    computedDuration = min(3, timeCap) // make sure 3 is not bigger than timeCap
                 case 2 ..< 3:
-                    computedDuration = 4
+                    computedDuration = min(4, timeCap) // make sure 4 is not bigger than timeCap
                 case 3 ..< 4:
-                    computedDuration = 5
+                    computedDuration = min(5, timeCap) // make sure 5 is not bigger than timeCap
                 default:
                     computedDuration = timeCap
                 }
