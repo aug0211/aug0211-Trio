@@ -10,6 +10,8 @@ extension OverrideProfilesConfig {
         @State private var isEditing = false
         @State private var showAlert = false
         @State private var showingDetail = false
+        @State private var selectedPreset: OverridePresets?
+        @State private var isEditSheetPresented: Bool = false
         @State private var alertSring = ""
         @State var isSheetPresented: Bool = false
 
@@ -43,16 +45,17 @@ extension OverrideProfilesConfig {
 
         var presetPopover: some View {
             Form {
-                Section {
-                    TextField("Name Of Profile", text: $state.profileName)
-                } header: { Text("Enter Name of Profile") }
-
+                nameSection(header: "Enter a name")
+                settingsSection(header: "Settings to save")
                 Section {
                     Button("Save") {
                         state.savePreset()
                         isSheetPresented = false
                     }
-                    .disabled(state.profileName.isEmpty || fetchedProfiles.filter({ $0.name == state.profileName }).isNotEmpty)
+                    .disabled(
+                        state.profileName.isEmpty || fetchedProfiles
+                            .contains(where: { $0.name == state.profileName })
+                    )
 
                     Button("Cancel") {
                         isSheetPresented = false
@@ -61,13 +64,112 @@ extension OverrideProfilesConfig {
             }
         }
 
+        var editPresetPopover: some View {
+            Form {
+                nameSection(header: "Keep or change name?")
+                settingsSection(header: "New settings to save")
+                Section {
+                    Button("Save") {
+                        guard let selectedPreset = selectedPreset else { return }
+                        state.updatePreset(selectedPreset)
+                        isEditSheetPresented = false
+                    }
+                    .disabled(state.profileName.isEmpty)
+
+                    Button("Cancel") {
+                        isEditSheetPresented = false
+                    }
+                }
+            }
+        }
+
+        @ViewBuilder private func nameSection(header: String) -> some View {
+            Section {
+                TextField("Profile override name", text: $state.profileName)
+            } header: {
+                Text(header)
+            }
+        }
+
+        @ViewBuilder private func settingsSection(header: String) -> some View {
+            Section(header: Text(header)) {
+                let percentString = Text("Override: \(Int(state.percentage))%")
+                let targetString = state
+                    .target != 0 ? Text("Target: \(state.target.formatted()) \(state.units.rawValue)") : Text("")
+                let durationString = state
+                    ._indefinite ? Text("Duration: Indefinite") : Text("Duration: \(state.duration.formatted()) minutes")
+                let isfString = state.isf ? Text("Change ISF") : Text("")
+                let crString = state.cr ? Text("Change CR") : Text("")
+                let smbString = state.smbIsOff ? Text("Disable SMB") : Text("")
+                let scheduledSMBString = state.smbIsScheduledOff ? Text("SMB Schedule On") : Text("")
+                let maxMinutesSMBString = state
+                    .smbMinutes != 0 ? Text("\(state.smbMinutes.formatted()) SMB Basal minutes") : Text("")
+                let maxMinutesUAMString = state
+                    .uamMinutes != 0 ? Text("\(state.uamMinutes.formatted()) UAM Basal minutes") : Text("")
+
+                VStack(alignment: .leading, spacing: 2) {
+                    percentString
+                    if targetString != Text("") { targetString }
+                    if durationString != Text("") { durationString }
+                    if isfString != Text("") { isfString }
+                    if crString != Text("") { crString }
+                    if smbString != Text("") { smbString }
+                    if scheduledSMBString != Text("") { scheduledSMBString }
+                    if maxMinutesSMBString != Text("") { maxMinutesSMBString }
+                    if maxMinutesUAMString != Text("") { maxMinutesUAMString }
+                }
+                .foregroundColor(.secondary)
+                .font(.caption)
+            }
+        }
+
         var body: some View {
             Form {
                 if state.presets.isNotEmpty {
                     Section {
-                        ForEach(fetchedProfiles) { preset in
+                        ForEach(fetchedProfiles.indices, id: \.self) { index in
+                            let preset = fetchedProfiles[index]
                             profilesView(for: preset)
-                        }.onDelete(perform: removeProfile)
+                                .swipeActions {
+                                    Button(role: .destructive) {
+                                        removeProfile(at: IndexSet(integer: index))
+                                    } label: {
+                                        Label("Delete", systemImage: "trash")
+                                    }
+
+                                    Button {
+                                        selectedPreset = preset
+                                        state.profileName = preset.name ?? ""
+                                        isEditSheetPresented = true
+                                    } label: {
+                                        Label("Edit", systemImage: "square.and.pencil")
+                                    }.tint(.blue)
+                                }
+                        }
+                    }
+                    header: { Text("Activate profile override") }
+                    footer: { VStack(alignment: .leading) {
+                        Text("Swipe left on a profile to edit or delete it.")
+                        Text("When you want to edit a profile:")
+                        HStack(alignment: .top) {
+                            Text(" •")
+                            Text(
+                                "First use the profile configurator below and select the settings you want to include."
+                            )
+                        }
+                        HStack(alignment: .top) {
+                            Text(" •")
+                            Text(
+                                "Then swipe left on the profile you want to change and click the edit symbol."
+                            )
+                        }
+                        HStack(alignment: .top) {
+                            Text(" •")
+                            Text(
+                                "In the pop-up: Use the existing profile name or enter a new name and click save - Done!"
+                            )
+                        }
+                    }
                     }
                 }
                 Section {
@@ -244,6 +346,7 @@ extension OverrideProfilesConfig {
                             .tint(.orange)
                             .frame(maxWidth: .infinity, alignment: .trailing)
                             .buttonStyle(BorderlessButtonStyle())
+                            .font(.callout)
                             .controlSize(.mini)
                             .disabled(unChanged())
                     }
@@ -273,6 +376,10 @@ extension OverrideProfilesConfig {
             .navigationBarTitle("Profiles")
             .navigationBarTitleDisplayMode(.automatic)
             .navigationBarItems(leading: Button("Close", action: state.hideModal))
+            .sheet(isPresented: $isEditSheetPresented) {
+                editPresetPopover
+                    .padding()
+            }
         }
 
         @ViewBuilder private func profilesView(for preset: OverridePresets) -> some View {
