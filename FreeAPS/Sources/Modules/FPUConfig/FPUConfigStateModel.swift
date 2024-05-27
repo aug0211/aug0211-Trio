@@ -25,7 +25,7 @@ extension FPUConfig {
             })
 
             subscribeSetting(\.delay, on: $delay.map(Int.init), initial: {
-                let value = max(min($0, 120), 60)
+                let value = max(min($0, 120), 30)
                 delay = Decimal(value)
             }, map: {
                 $0
