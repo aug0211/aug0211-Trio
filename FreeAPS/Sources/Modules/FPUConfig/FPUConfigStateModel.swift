@@ -11,7 +11,7 @@ extension FPUConfig {
         override func subscribe() {
             subscribeSetting(\.maxCarbs, on: $maxCarbs) { maxCarbs = $0 }
             subscribeSetting(\.timeCap, on: $timeCap.map(Int.init), initial: {
-                let value = max(min($0, 12), 1)
+                let value = max(min($0, 12), 5)
                 timeCap = Decimal(value)
             }, map: {
                 $0
@@ -25,7 +25,7 @@ extension FPUConfig {
             })
 
             subscribeSetting(\.delay, on: $delay.map(Int.init), initial: {
-                let value = max(min($0, 120), 30)
+                let value = max(min($0, 120), 60)
                 delay = Decimal(value)
             }, map: {
                 $0
