@@ -305,11 +305,15 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
         var suggested = storage.retrieve(OpenAPS.Enact.suggested, as: Suggestion.self)
         var enacted = storage.retrieve(OpenAPS.Enact.enacted, as: Suggestion.self)
 
-        if (suggested?.timestamp ?? .distantPast) > (enacted?.timestamp ?? .distantPast) {
-            enacted?.predictions = nil
-        } else {
-            suggested?.predictions = nil
-        }
+        // Auggie - commenting this out after chatting with Daniel
+        // Working to get better upload status and more info for LoopFollow
+        /*
+         if (suggested?.timestamp ?? .distantPast) > (enacted?.timestamp ?? .distantPast) {
+             enacted?.predictions = nil
+         } else {
+             suggested?.predictions = nil
+         }
+         */
 
         let loopIsClosed = settingsManager.settings.closedLoop
 
@@ -327,7 +331,7 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
             openapsStatus = OpenAPSStatus(
                 iob: iob?.first,
                 suggested: suggested,
-                enacted: nil,
+                enacted: enacted,
                 version: "0.7.1"
             )
         }
