@@ -46,7 +46,7 @@ import Foundation
                 carbs: carbs,
                 fat: Decimal(quantityFat),
                 protein: Decimal(quantityProtein),
-                note: "add with shortcuts",
+                note: "remote",
                 enteredBy: CarbsEntry.manual,
                 isFPU: false, fpuID: nil
             )]
