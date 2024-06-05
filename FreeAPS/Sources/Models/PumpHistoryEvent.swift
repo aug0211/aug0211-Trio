@@ -5,8 +5,8 @@ struct PumpHistoryEvent: JSON, Equatable {
     let id: String
     let type: EventType
     let timestamp: Date
-    //Auggie TODO: should this be a decimal? Can pumps decimals, or only doubles for boluses?
-    //Causes an issue when uploading to MongoDB
+    // Auggie TODO: should this be a decimal? Can pumps decimals, or only doubles for boluses?
+    // Causes an issue when uploading to MongoDB
     let amount: Decimal?
     let duration: Int?
     let durationMin: Int?
