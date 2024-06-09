@@ -538,6 +538,7 @@
       }
     },
     "Amount not correctly defined" : {
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
