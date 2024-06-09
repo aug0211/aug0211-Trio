@@ -13,6 +13,9 @@ struct PumpHistoryEvent: JSON, Equatable {
     let rate: Decimal?
     let temp: TempType?
     let carbInput: Int?
+    // Auggie - fat and protein to NS
+    let fatInput: Int?
+    let proteinInput: Int?
     let note: String?
     let isSMB: Bool?
     let isExternalInsulin: Bool?
@@ -27,6 +30,9 @@ struct PumpHistoryEvent: JSON, Equatable {
         rate: Decimal? = nil,
         temp: TempType? = nil,
         carbInput: Int? = nil,
+        // Auggie - fat and protein to NS
+        fatInput: Int? = nil,
+        proteinInput: Int? = nil,
         note: String? = nil,
         isSMB: Bool? = nil,
         isExternalInsulin: Bool? = nil
@@ -40,6 +46,9 @@ struct PumpHistoryEvent: JSON, Equatable {
         self.rate = rate
         self.temp = temp
         self.carbInput = carbInput
+        // Auggie - fat and protein to NS
+        self.fatInput = fatInput
+        self.proteinInput = proteinInput
         self.note = note
         self.isSMB = isSMB
         self.isExternalInsulin = isExternalInsulin
@@ -90,6 +99,9 @@ extension PumpHistoryEvent {
         case rate
         case temp
         case carbInput = "carb_input"
+        // Auggie - fat and protein to NS
+        case fatInput
+        case proteinInput
         case note
         case isSMB
         case isExternalInsulin

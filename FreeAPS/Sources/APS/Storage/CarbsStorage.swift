@@ -232,8 +232,10 @@ final class BaseCarbsStorage: CarbsStorage, Injectable {
                 bolus: nil,
                 insulin: nil,
                 carbs: $0.carbs,
-                fat: nil,
-                protein: nil,
+                // Auggie - test, was nil
+                fat: $0.fat,
+                // Auggie - test, was nil
+                protein: $0.protein,
                 foodType: $0.note,
                 targetTop: nil,
                 targetBottom: nil

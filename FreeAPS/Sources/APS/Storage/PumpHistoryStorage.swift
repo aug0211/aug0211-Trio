@@ -332,8 +332,9 @@ extension NightscoutTreatment {
                 insulin: nil,
                 notes: nil,
                 carbs: Decimal(event.carbInput ?? 0),
-                fat: nil,
-                protein: nil,
+                // Auggie - fat and protein to NS
+                fat: Decimal(event.fatInput ?? 0),
+                protein: Decimal(event.proteinInput ?? 0),
                 targetTop: nil,
                 targetBottom: nil
             )
