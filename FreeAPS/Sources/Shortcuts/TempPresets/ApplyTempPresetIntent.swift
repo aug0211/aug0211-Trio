@@ -3,10 +3,10 @@ import Foundation
 
 @available(iOS 16.0, *) struct ApplyTempPresetIntent: AppIntent {
     // Title of the action in the Shortcuts app
-    static var title = LocalizedStringResource("Activate TempTarget Preset", table: "ShortcutsDetail")
+    static var title: LocalizedStringResource = "Apply a temporary target"
 
     // Description of the action in the Shortcuts app
-    static var description = IntentDescription(.init("Activate an existing TempTarget Preset", table: "ShortcutsDetail"))
+    static var description = IntentDescription("Enable a temporary target")
 
     internal var intentRequest: TempPresetsIntentRequest
 
@@ -14,24 +14,23 @@ import Foundation
         intentRequest = TempPresetsIntentRequest()
     }
 
-    @Parameter(
-        title: LocalizedStringResource("Preset", table: "ShortcutsDetail"),
-        description: LocalizedStringResource("Preset choice", table: "ShortcutsDetail")
-    ) var preset: TempPreset?
+    @Parameter(title: "Preset") var preset: tempPreset?
 
     @Parameter(
-        title: LocalizedStringResource("Confirm Before applying", table: "ShortcutsDetail"),
-        description: LocalizedStringResource("If toggled, you will need to confirm before applying", table: "ShortcutsDetail"),
+        title: "Confirm Before applying",
+        description: "If toggled, you will need to confirm before applying",
         default: true
     ) var confirmBeforeApplying: Bool
 
     static var parameterSummary: some ParameterSummary {
         When(\ApplyTempPresetIntent.$confirmBeforeApplying, .equalTo, true, {
-            Summary("Activating \(\.$preset)", table: "ShortcutsDetail") {
+            Summary("Applying \(\.$preset)") {
                 \.$confirmBeforeApplying
             }
         }, otherwise: {
-            Summary("Immediately activating \(\.$preset)", table: "ShortcutsDetail") {}
+            Summary("Immediately applying \(\.$preset)") {
+                \.$confirmBeforeApplying
+            }
         })
     }
 
@@ -47,25 +46,20 @@ import Foundation
 
     @MainActor func perform() async throws -> some ProvidesDialog {
         do {
-            let presetToApply: TempPreset
+            let presetToApply: tempPreset
             if let preset = preset {
                 presetToApply = preset
             } else {
                 presetToApply = try await $preset.requestDisambiguation(
                     among: intentRequest.fetchAll(),
-                    dialog: IntentDialog(LocalizedStringResource("Select Temporary Target", table: "ShortcutsDetail"))
+                    dialog: "Select Temporary Target"
                 )
             }
 
             let displayName: String = presetToApply.name
             if confirmBeforeApplying {
                 try await requestConfirmation(
-                    result: .result(
-                        dialog: IntentDialog(LocalizedStringResource(
-                            "Confirm to apply TempTarget '\(displayName)'",
-                            table: "ShortcutsDetail"
-                        ))
-                    )
+                    result: .result(dialog: "Confirm to apply temporary target '\(displayName)'")
                 )
             }
 
@@ -73,13 +67,10 @@ import Foundation
             let tempTarget = try intentRequest.findTempTarget(presetToApply)
             let finalTempTargetApply = try intentRequest.enactTempTarget(tempTarget)
             let formattedTime = decimalToTimeFormattedString(decimal: finalTempTargetApply.duration)
+            let displayDetail: String =
+                "Target '\(finalTempTargetApply.displayName)' applied for \(formattedTime)"
             return .result(
-                dialog: IntentDialog(
-                    LocalizedStringResource(
-                        "Target '\(finalTempTargetApply.displayName)' applied for \(formattedTime)",
-                        table: "ShortcutsDetail"
-                    )
-                )
+                dialog: IntentDialog(stringLiteral: displayDetail)
             )
         } catch {
             throw error

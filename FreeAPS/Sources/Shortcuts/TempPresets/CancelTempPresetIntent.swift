@@ -3,10 +3,10 @@ import Foundation
 
 @available(iOS 16.0, *) struct CancelTempPresetIntent: AppIntent {
     // Title of the action in the Shortcuts app
-    static var title = LocalizedStringResource("Cancel active TempTarget", table: "ShortcutsDetail")
+    static var title: LocalizedStringResource = "Cancel a temporary Preset"
 
     // Description of the action in the Shortcuts app
-    static var description = IntentDescription(.init("Cancel an active TempTarget", table: "ShortcutsDetail"))
+    static var description = IntentDescription("Cancel temporary preset.")
 
     internal var intentRequest: TempPresetsIntentRequest
 
@@ -16,20 +16,9 @@ import Foundation
 
     @MainActor func perform() async throws -> some ProvidesDialog {
         do {
-            if let canceledTempPresetName = try intentRequest.cancelTempTarget() {
-                return .result(
-                    dialog: IntentDialog(LocalizedStringResource(
-                        "TempTarget '\(canceledTempPresetName)' canceled",
-                        table: "ShortcutsDetail"
-                    ))
-                )
-            } else {
-                throw TempPresetsIntentRequest.TempPresetsError.noActiveTempPresets
-            }
-
-        } catch TempPresetsIntentRequest.TempPresetsError.noActiveTempPresets {
+            try intentRequest.cancelTempTarget()
             return .result(
-                dialog: IntentDialog(LocalizedStringResource("No active TempTarget to cancel", table: "ShortcutsDetail"))
+                dialog: IntentDialog(stringLiteral: "Temporary Target canceled")
             )
         } catch {
             throw error

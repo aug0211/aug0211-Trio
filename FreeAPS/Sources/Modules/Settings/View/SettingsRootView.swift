@@ -38,7 +38,6 @@ extension Settings {
                     Text("Notifications").navigationLink(to: .notificationsConfig, from: self)
                     Text("App Icons").navigationLink(to: .iconConfig, from: self)
                     Text("Statistics and Home View").navigationLink(to: .statisticsConfig, from: self)
-                    Text("Shortcuts", tableName: "ShortcutsDetail").navigationLink(to: .shortcutsConfig, from: self)
                 } header: { Text("Services") }
 
                 Section {

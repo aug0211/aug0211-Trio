@@ -5,14 +5,11 @@ import Swinject
     var intentRequest: BaseIntentsRequest { get set }
 }
 
-@available(iOS 16.0, *) class BaseIntentsRequest: NSObject, @unchecked Sendable, Injectable {
+@available(iOS 16.0, *) class BaseIntentsRequest: NSObject, Injectable {
     @Injected() var tempTargetsStorage: TempTargetsStorage!
     @Injected() var settingsManager: SettingsManager!
     @Injected() var storage: TempTargetsStorage!
     @Injected() var fileStorage: FileStorage!
-    @Injected() var carbsStorage: CarbsStorage!
-    @Injected() var glucoseStorage: GlucoseStorage!
-    @Injected() var apsManager: APSManager!
 
     let resolver: Resolver
 
