@@ -121,7 +121,7 @@ extension OverrideProfilesConfig {
                         .font(.largeTitle)
                     Slider(
                         value: $state.percentage,
-                        in: 10 ... 200,
+                        in: 10 ... 300,
                         step: 1,
                         onEditingChanged: { editing in
                             isEditing = editing
