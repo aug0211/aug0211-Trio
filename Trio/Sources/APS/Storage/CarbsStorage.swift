@@ -170,7 +170,8 @@ final class BaseCarbsStorage: CarbsStorage, Injectable {
         let maxTotalGrams = 99
         let maxEntries = 3
         let maxPerEntry = 33
-        let minPerEntry = 10
+        // Auggie - reduce min FPU carb entry from 10 to 3
+        let minPerEntry = 3
         let spacing = TimeInterval(spreadInterval * 60)
 
         // kcal -> carb equivalents (kcal/10 * adjustment), rounded down to whole grams
