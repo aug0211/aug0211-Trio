@@ -8,7 +8,7 @@ class TrioRemoteControl: Injectable {
     @Injected() internal var tempTargetsStorage: TempTargetsStorage!
     @Injected() internal var carbsStorage: CarbsStorage!
     @Injected() internal var nightscoutManager: NightscoutManager!
-    @Injected() internal var overrideStorage: OverrideStorage!
+    @Injected() internal var adjustmentManager: AdjustmentManager!
     @Injected() internal var settings: SettingsManager!
     @Injected() internal var bolusSafetyValidator: BolusSafetyValidator!
     @Injected() internal var healthKitManager: HealthKitManager!
@@ -17,10 +17,7 @@ class TrioRemoteControl: Injectable {
 
     private let timeWindow: TimeInterval = 600
 
-    internal let viewContext: NSManagedObjectContext
-
     private init() {
-        viewContext = CoreDataStack.shared.persistentContainer.viewContext
         injectServices(TrioApp.resolver)
     }
 
