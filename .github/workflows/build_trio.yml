@@ -2,9 +2,6 @@ name: 4. Build Trio
 run-name: Build Trio (${{ github.ref_name }})
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - dev-live
   schedule:
     # Check for updates every Sunday
     #   Later logic builds if there are updates or if it is the 2nd Sunday of the month
@@ -184,7 +181,7 @@ jobs:
       uses: ./.github/workflows/create_certs.yml
       secrets: inherit
       if: |
-        github.event_name == 'workflow_dispatch' || github.event_name == 'push' ||
+        github.event_name == 'workflow_dispatch' ||
           (vars.SCHEDULED_BUILD != 'false' && needs.check_status.outputs.IS_SECOND_IN_MONTH == 'true') ||
           (vars.SCHEDULED_SYNC != 'false' && needs.check_status.outputs.NEW_COMMITS == 'true' )
 
@@ -197,7 +194,7 @@ jobs:
       contents: write
     if:
       | # builds with manual start; if scheduled: once a month or when new commits are found
-      github.event_name == 'workflow_dispatch' || github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch' ||
         (vars.SCHEDULED_BUILD != 'false' && needs.check_status.outputs.IS_SECOND_IN_MONTH == 'true') ||
         (vars.SCHEDULED_SYNC != 'false' && needs.check_status.outputs.NEW_COMMITS == 'true' )
     steps:
