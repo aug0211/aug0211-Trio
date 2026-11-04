@@ -337286,6 +337286,7 @@
     },
     "Via Watch" : {
       "comment" : "Note added to carb entry when entered via watch",
+      "extractionState" : "stale",
       "localizations" : {
         "bg" : {
           "stringUnit" : {
