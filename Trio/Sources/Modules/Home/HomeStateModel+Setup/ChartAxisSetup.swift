@@ -2,7 +2,7 @@ import CoreData
 import Foundation
 
 extension Home.StateModel {
-    @MainActor  func updateGlucoseChartYAxis(glucoseValues _: [GlucoseStored]) {
+    @MainActor func updateGlucoseChartYAxis(glucoseValues _: [GlucoseStored]) {
         minYAxisValue = 0
         maxYAxisValue = 300
     }
