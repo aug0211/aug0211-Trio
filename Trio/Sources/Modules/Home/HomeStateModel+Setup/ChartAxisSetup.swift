@@ -2,42 +2,15 @@ import CoreData
 import Foundation
 
 extension Home.StateModel {
-    /// Recomputes the main glucose chart Y axis bounds from the fetched glucose objects.
+    /// Sets the main glucose chart Y axis bounds from the fetched glucose objects.
+    /// Auggie: the floor is pinned to 0 and the ceiling to 300 mg/dL; the ceiling
+    /// jumps to 400 only when an actual reading exceeds 300. Forecasts are ignored.
     /// Runs on the main actor since the inputs are viewContext managed objects.
     @MainActor func updateGlucoseChartYAxis(glucoseValues: [GlucoseStored]) {
-        let glucoseMapped = glucoseValues.map { Decimal($0.glucose) }
-        let forecastValues = preprocessedData.map { Decimal($0.forecastValue.value) }
+        let maxGlucose = glucoseValues.map { Decimal($0.glucose) }.max() ?? 0
 
-        // Ensure all values exist, otherwise set default values
-        guard let minGlucose = glucoseMapped.min(), let maxGlucose = glucoseMapped.max() else {
-            minYAxisValue = 39
-            maxYAxisValue = 200
-            return
-        }
-
-        let minForecast = forecastValues.min()
-        let maxForecast = forecastValues.max()
-
-        // Adjust max forecast to be no more than 50 over max glucose
-        let adjustedMaxForecast = min(maxForecast ?? maxGlucose + 50, maxGlucose + 50)
-        let minOverall = min(minGlucose, minForecast ?? minGlucose)
-        let maxOverall = max(maxGlucose, adjustedMaxForecast)
-
-        var maxYValue: Decimal = 200
-        if maxOverall > 200, maxOverall <= 225 {
-            maxYValue = 250
-        } else if maxOverall > 225, maxOverall <= 275 {
-            maxYValue = 300
-        } else if maxOverall > 275, maxOverall <= 325 {
-            maxYValue = 350
-        } else if maxOverall > 325 {
-            maxYValue = 400
-        }
-
-        // keep the low threshold (and target) inside the domain: RuleMarks
-        // below the floor would clamp onto the plot edge
-        minYAxisValue = min(minOverall, lowGlucose - 20)
-        maxYAxisValue = maxYValue
+        minYAxisValue = 0
+        maxYAxisValue = maxGlucose > 300 ? 400 : 300
     }
 
     /// Recomputes the COB chart Y axis bounds from the fetched determination objects.
