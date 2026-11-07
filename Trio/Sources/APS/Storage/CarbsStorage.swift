@@ -178,7 +178,7 @@ final class BaseCarbsStorage: CarbsStorage, Injectable {
         let maxTotalGrams = 99
         let maxEntries = 3
         let maxPerEntry = 33
-        let minPerEntry = 10
+        let minPerEntry = 3 // Auggie: reduced from 10g
         let spacing = TimeInterval(spreadInterval * 60)
 
         // kcal -> carb equivalents (kcal/10 * adjustment), rounded down to whole grams

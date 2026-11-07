@@ -180,7 +180,7 @@ import Testing
         for fpuEntry in fpuEntries {
             #expect(fpuEntry.fat == 0, "FPU fat must be 0")
             #expect(fpuEntry.protein == 0, "FPU protein must be 0")
-            #expect(fpuEntry.carbs >= 10, "FPU carbs must be >= 10g")
+            #expect(fpuEntry.carbs >= 3, "FPU carbs must be >= 3g")
             #expect(fpuEntry.carbs <= 33, "FPU carbs must be <= 33g")
             #expect(Double(fpuEntry.carbs).truncatingRemainder(dividingBy: 1) == 0, "FPU carbs must be whole grams")
         }
@@ -272,7 +272,7 @@ import Testing
         for fpuEntry in fpuEntries {
             #expect(fpuEntry.fat == 0, "FPU entry fat must be 0")
             #expect(fpuEntry.protein == 0, "FPU entry protein must be 0")
-            #expect(fpuEntry.carbs >= 10, "FPU entry carbs must be >= 10g")
+            #expect(fpuEntry.carbs >= 3, "FPU entry carbs must be >= 3g")
             #expect(fpuEntry.carbs <= 33, "FPU entry carbs must be <= 33g")
             #expect(Double(fpuEntry.carbs).truncatingRemainder(dividingBy: 1) == 0, "FPU carbs must be whole grams")
         }
@@ -299,7 +299,7 @@ import Testing
     }
 
     @Test(
-        "Store small fat/protein meal drops FPU equivalents when total would be <10g (defaults: adjustment=0.5, delay=60m)"
+        "Store small fat/protein meal drops FPU equivalents when total would be <3g (defaults: adjustment=0.5, delay=60m)"
     ) func testStoreSmallFatProteinMealDropsFPUBelowMinimum() async throws {
         let fpuID = UUID().uuidString
         let baseDate = Date(timeIntervalSince1970: 1_700_002_000)
@@ -312,7 +312,7 @@ import Testing
         // kcal total = 26
         // (kcal/10) = 2.6
         // 2.6 * 0.5 = 1.3
-        // Int(1.3) = 1 (<10) -> should be dropped (no FPU entries)
+        // Int(1.3) = 1 (<3) -> should be dropped (no FPU entries)
         let smallMealEntry = CarbsEntry(
             id: UUID().uuidString,
             createdAt: baseDate,
@@ -349,7 +349,7 @@ import Testing
         #expect(originalCarbEntry?.protein == 2, "Original protein should match")
 
         let fpuEntries = storedEntries.filter { $0.isFPU == true }
-        #expect(fpuEntries.isEmpty == true, "No FPU entries should be created when equivalents are <10g")
+        #expect(fpuEntries.isEmpty == true, "No FPU entries should be created when equivalents are <3g")
 
         #expect(
             storedEntries.allSatisfy { $0.fpuID?.uuidString == fpuID },
