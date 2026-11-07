@@ -1,7 +1,7 @@
 import Foundation
 
 extension TrioRemoteControl {
-    static let remoteMealNote = "📡"
+    static let remoteMealNote = "📡📲"
 
     func handleMealCommand(_ payload: CommandPayload) async throws {
         guard payload.carbs != nil || payload.fat != nil || payload.protein != nil else {
