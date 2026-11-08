@@ -9,8 +9,17 @@ import LibreTransmitter
 import LoopKit
 import LoopKitUI
 import SyaiKit
+import UIKit
 
 final class PluginSource: GlucoseSource {
+    /// How long to hold Dexcom Share readings before storing them, so a Bluetooth reading from
+    /// the connection that triggered the fetch is stored first (the longest connect-to-disconnect
+    /// in the logs that motivated this was 1.55 s).
+    private static let shareFallbackDelay: TimeInterval = 3
+
+    /// G5/G6 readings arrive every 5 minutes.
+    private static let dexcomReadingInterval: TimeInterval = 5 * 60
+
     private let processQueue = DispatchQueue(label: "CGMPluginSource.processQueue")
     private let glucoseStorage: GlucoseStorage!
     private let deviceLogStore: DeviceLogStore
@@ -73,14 +82,13 @@ final class PluginSource: GlucoseSource {
             guard let self = self else { return }
             self.processQueue.async {
                 guard let cgmManager = self.cgmManager else { return }
-                cgmManager.fetchNewDataIfNeeded { _ in
-                    // Ignore values returned from fetchNewDataIfNeeded since
-                    // these come from share client and cause a race condition
-                    // that causes the promise to complete before a CGM value
-                    // has a chance to return. From looking at the code this should
-                    // only impact G6 since that is the only CGM manager that will
-                    // return data and only if share credentials are set
+                cgmManager.fetchNewDataIfNeeded { [weak self] result in
+                    // The timer's publisher still completes with no values, so it can never
+                    // race a Bluetooth reading. G5/G6 Dexcom Share readings returned here are
+                    // stored separately through newGlucoseFromCgmManager, the same path
+                    // Bluetooth readings use.
                     promise(.success([]))
+                    self?.handleShareFallbackResult(result, from: cgmManager)
                 }
             }
         }
@@ -91,6 +99,123 @@ final class PluginSource: GlucoseSource {
 
     deinit {
         // dexcomManager.transmitter.stopScanning()
+    }
+
+    // MARK: - Dexcom Share fallback (G5/G6)
+
+    /// G5/G6 return Dexcom Share readings only through the `fetchNewDataIfNeeded` completion, and
+    /// only when the last Bluetooth reading is more than 4.5 minutes old. Store them instead of
+    /// discarding them.
+    ///
+    /// After `shareFallbackDelay`, storage decides what each reading is: at or before the last
+    /// stored CGM reading it is backfill (deduplicated within 3.5 minutes, never triggers a loop);
+    /// newer, it is a reading Bluetooth missed and triggers the loop as usual. One exception: if
+    /// the next Bluetooth reading is due within the minimum loop interval, a loop now would make
+    /// that fresh reading's loop be skipped as too soon, so the readings are stored as history only.
+    private func handleShareFallbackResult(_ result: CGMReadingResult, from manager: CGMManagerUI) {
+        guard manager is G6CGMManager || manager is G5CGMManager else { return }
+
+        processQueue.async { [weak self] in
+            guard let self = self else { return }
+
+            switch result {
+            case let .newData(samples):
+                guard let newest = samples.map(\.date).max(), let oldest = samples.map(\.date).min() else { return }
+                self.logCGMDiagnostic(
+                    "share fetch returned \(samples.count) readings \(oldest) to \(newest); storing in \(Int(Self.shareFallbackDelay)) s"
+                )
+
+                let taskName = "Store Dexcom Share fallback readings"
+                let backgroundTaskID = startBackgroundTask(withName: taskName)
+
+                self.processQueue.asyncAfter(deadline: .now() + Self.shareFallbackDelay) { [weak self] in
+                    var taskID = backgroundTaskID
+                    defer { endBackgroundTaskSafely(&taskID, taskName: taskName) }
+
+                    guard let self = self else { return }
+                    self.storeShareFallbackReadings(result)
+                }
+
+            case let .error(error):
+                self.logCGMDiagnostic("share fetch failed: \(error.localizedDescription)")
+
+            case .noData,
+                 .unreliableData:
+                break
+            }
+        }
+    }
+
+    /// Must run on `processQueue`.
+    private func storeShareFallbackReadings(_ result: CGMReadingResult) {
+        dispatchPrecondition(condition: .onQueue(processQueue))
+
+        let glucose: [BloodGlucose]
+        switch readCGMResult(readingResult: result) {
+        case let .success(values):
+            glucose = values
+        case let .failure(error):
+            logCGMDiagnostic("share readings not usable: \(error.localizedDescription)")
+            return
+        }
+
+        guard glucose.isNotEmpty else { return }
+
+        let lastStored = glucoseStorage.syncDate()
+        let newerCount = glucose.filter { $0.dateString > lastStored }.count
+
+        // 30 s of slack covers the pump update that runs before a triggered loop starts
+        if newerCount > 0, let nextBluetoothReading = expectedNextBluetoothReading(),
+           nextBluetoothReading.timeIntervalSinceNow < Config.loopInterval + 30
+        {
+            logCGMDiagnostic(
+                "share storing \(glucose.count) readings as history only (\(newerCount) newer than last stored \(lastStored)); next Bluetooth reading due \(nextBluetoothReading)"
+            )
+            Task {
+                do {
+                    try await self.glucoseStorage.backfillGlucose(glucose)
+                } catch {
+                    warning(.cgm, "Storing Dexcom Share history failed", error: error)
+                }
+            }
+            return
+        }
+
+        logCGMDiagnostic(
+            "share storing \(glucose.count) readings (\(newerCount) newer than last stored \(lastStored), rest backfill or duplicate)"
+        )
+        glucoseManager?.newGlucoseFromCgmManager(newGlucose: glucose)
+    }
+
+    /// When the next G5/G6 Bluetooth reading should arrive, from the last one received over
+    /// Bluetooth, allowing 10 seconds for the connection (logs show 6-12 s after the reading's
+    /// timestamp). Nil if there is no Bluetooth reading yet.
+    private func expectedNextBluetoothReading() -> Date? {
+        let lastBluetoothReading: Date?
+        if let manager = cgmManager as? G6CGMManager {
+            lastBluetoothReading = manager.latestReading?.readDate
+        } else if let manager = cgmManager as? G5CGMManager {
+            lastBluetoothReading = manager.latestReading?.readDate
+        } else {
+            lastBluetoothReading = nil
+        }
+
+        guard let last = lastBluetoothReading else { return nil }
+
+        let elapsed = max(0, Date().timeIntervalSince(last))
+        let intervalsElapsed = (elapsed / Self.dexcomReadingInterval).rounded(.down) + 1
+        return last.addingTimeInterval(intervalsElapsed * Self.dexcomReadingInterval + 10)
+    }
+
+    /// Writes a line to the CGM's device log, so it appears in the CGM log export.
+    private func logCGMDiagnostic(_ message: String) {
+        guard let pluginIdentifier = cgmManager?.pluginIdentifier else { return }
+        deviceLogStore.log(
+            managerIdentifier: pluginIdentifier,
+            deviceIdentifier: nil,
+            type: .delegate,
+            message: "[G6DIAG] " + message
+        )
     }
 }
 
@@ -191,10 +316,23 @@ extension PluginSource: CGMManagerDelegate {
         }
     }
 
-    func startDateToFilterNewData(for _: CGMManager) -> Date? {
+    func startDateToFilterNewData(for manager: CGMManager) -> Date? {
         dispatchPrecondition(condition: .onQueue(processQueue))
 
-        return glucoseStorage.lastGlucoseDate()
+        let lastGlucoseDate = glucoseStorage.lastGlucoseDate()
+
+        // G5/G6 Dexcom Share fallback: Share only returns the last 30 minutes. Let all of them
+        // through, so readings Bluetooth missed are backfilled even after a newer Bluetooth
+        // reading arrived; storage drops duplicates within 3.5 minutes of existing readings.
+        // Scoped to Share inside G5/G6, not Share selected as the CGM itself.
+        if manager.pluginIdentifier == "DexShareClient",
+           cgmManager is G6CGMManager || cgmManager is G5CGMManager,
+           let lastGlucoseDate = lastGlucoseDate
+        {
+            return min(lastGlucoseDate, Date().addingTimeInterval(-31 * 60))
+        }
+
+        return lastGlucoseDate
     }
 
     func cgmManagerDidUpdateState(_ cgmManager: CGMManager) {
