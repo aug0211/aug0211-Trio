@@ -29,7 +29,24 @@ final class PluginSource: GlucoseSource {
     let cgmProgressHighlight = CurrentValueSubject<DeviceLifecycleProgress?, Never>(nil)
 
     var cgmManager: CGMManagerUI? {
-        didSet { publishCGMStatus() }
+        didSet {
+            publishCGMStatus()
+            Self.applyRedundantReconnectSetting(to: cgmManager)
+        }
+    }
+
+    /// UserDefaults key for the debug-only G5/G6 redundant-reconnect switch in CGM settings.
+    static let allowRedundantReconnectKey = "G6DiagnosticsAllowRedundantReconnect"
+
+    /// Applies the CGM settings A/B switch to a G5/G6 transmitter. Off (the fixed reconnect
+    /// behavior) unless deliberately turned on. Requires the CGMBLEKit patch in `patches/`.
+    static func applyRedundantReconnectSetting(to manager: CGMManagerUI?) {
+        let allow = UserDefaults.standard.bool(forKey: allowRedundantReconnectKey)
+        if let manager = manager as? G6CGMManager {
+            manager.transmitter.allowRedundantReconnect = allow
+        } else if let manager = manager as? G5CGMManager {
+            manager.transmitter.allowRedundantReconnect = allow
+        }
     }
 
     var cgmHasValidSensorSession: Bool = false
@@ -44,6 +61,7 @@ final class PluginSource: GlucoseSource {
         cgmManager?.cgmManagerDelegate = self
         // didSet doesn't fire from the defining class's own init.
         publishCGMStatus()
+        Self.applyRedundantReconnectSetting(to: cgmManager)
     }
 
     /// Republishes the manager's lifecycle/highlight to the subjects.

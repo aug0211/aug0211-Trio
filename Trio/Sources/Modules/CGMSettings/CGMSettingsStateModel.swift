@@ -54,6 +54,23 @@ extension CGMSettings {
         @Published var listOfCGM: [CGMModel] = []
         @Published var url: URL?
 
+        /// Debug-only A/B switch for the G5/G6 duplicate-connection fix. Saved across relaunches
+        /// and applied to the running transmitter immediately.
+        @Published var allowRedundantReconnect = false {
+            didSet {
+                guard allowRedundantReconnect != oldValue else { return }
+                UserDefaults.standard.set(allowRedundantReconnect, forKey: PluginSource.allowRedundantReconnectKey)
+                PluginSource.applyRedundantReconnectSetting(to: fetchGlucoseManager?.cgmManager)
+                info(.cgm, "G5/G6 redundant reconnect A/B switch turned \(allowRedundantReconnect ? "ON" : "OFF")")
+            }
+        }
+
+        /// True when the active CGM is a Dexcom G5 or G6 read through CGMBLEKit.
+        var isDexcomTransmitterCGM: Bool {
+            let manager = fetchGlucoseManager?.cgmManager
+            return manager is G6CGMManager || manager is G5CGMManager
+        }
+
         var shouldRunDeleteOnSettingsChange = true
 
         override func subscribe() {
@@ -94,6 +111,8 @@ extension CGMSettings {
             }
 
             cgmTransmitterDeviceAddress = UserDefaults.standard.cgmTransmitterDeviceAddress
+
+            allowRedundantReconnect = UserDefaults.standard.bool(forKey: PluginSource.allowRedundantReconnectKey)
 
             subscribeSetting(\.smoothGlucose, on: $smoothGlucose, initial: { smoothGlucose = $0 })
         }

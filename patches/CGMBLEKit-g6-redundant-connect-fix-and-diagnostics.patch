@@ -433,10 +433,10 @@ index 8239e10..563b3ea 100644
              // If we weren't expecting this notification, pass it along to the delegate
              delegate?.peripheralManager(self, didUpdateValueFor: characteristic)
 diff --git a/CGMBLEKit/CGMBLEKit/Transmitter.swift b/CGMBLEKit/CGMBLEKit/Transmitter.swift
-index 7c10d41..cc26b24 100644
+index 7c10d41..0849b62 100644
 --- a/CGMBLEKit/CGMBLEKit/Transmitter.swift
 +++ b/CGMBLEKit/CGMBLEKit/Transmitter.swift
-@@ -72,6 +72,19 @@ public final class Transmitter: BluetoothManagerDelegate {
+@@ -72,6 +72,21 @@ public final class Transmitter: BluetoothManagerDelegate {
  
      public var needsExpiryRead: Bool = false
  
@@ -449,6 +449,8 @@ index 7c10d41..cc26b24 100644
 +        }
 +        set {
 +            lockedAllowRedundantReconnect.value = newValue
++            // Marks which arm of the A/B check the following sessions belong to
++            G6SessionDiagnostics.shared.milestone("allowRedundantReconnect", "\(newValue)")
 +        }
 +    }
 +    private let lockedAllowRedundantReconnect: Locked<Bool> = Locked(false)
@@ -456,7 +458,7 @@ index 7c10d41..cc26b24 100644
      public weak var delegate: TransmitterDelegate?
  
      public weak var commandSource: TransmitterCommandSource?
-@@ -117,7 +130,8 @@ public final class Transmitter: BluetoothManagerDelegate {
+@@ -117,7 +132,8 @@ public final class Transmitter: BluetoothManagerDelegate {
  
      public func resumeScanning() {
          if stayConnected {
@@ -466,7 +468,7 @@ index 7c10d41..cc26b24 100644
          }
      }
  
-@@ -146,7 +160,7 @@ public final class Transmitter: BluetoothManagerDelegate {
+@@ -146,7 +162,7 @@ public final class Transmitter: BluetoothManagerDelegate {
              bluetoothManager.stayConnected = newValue
  
              if newValue {
@@ -475,7 +477,7 @@ index 7c10d41..cc26b24 100644
              }
          }
      }
-@@ -170,7 +184,9 @@ public final class Transmitter: BluetoothManagerDelegate {
+@@ -170,7 +186,9 @@ public final class Transmitter: BluetoothManagerDelegate {
                  self.log.debug("Listening for authentication responses in passive mode")
                  do {
                      try peripheral.listenToCharacteristic(.authentication)
@@ -485,7 +487,7 @@ index 7c10d41..cc26b24 100644
                      self.delegateQueue.async {
                          self.delegate?.transmitter(self, didError: error)
                      }
-@@ -260,16 +276,20 @@ public final class Transmitter: BluetoothManagerDelegate {
+@@ -260,16 +278,20 @@ public final class Transmitter: BluetoothManagerDelegate {
  
          guard response.count > 0 else { return }
  
@@ -506,7 +508,7 @@ index 7c10d41..cc26b24 100644
                  delegateQueue.async {
                      self.delegate?.transmitter(self, didError: TransmitterError.observationError("Unable to handle glucose control response"))
                  }
-@@ -279,6 +299,7 @@ public final class Transmitter: BluetoothManagerDelegate {
+@@ -279,6 +301,7 @@ public final class Transmitter: BluetoothManagerDelegate {
                  // Subscribe to backfill updates
                  do {
                      try peripheral.listenToCharacteristic(.backfill)
@@ -514,7 +516,7 @@ index 7c10d41..cc26b24 100644
                  } catch let error {
                      self.log.error("Error trying to enable notifications on backfill characteristic: %{public}@", String(describing: error))
                      self.delegateQueue.async {
-@@ -400,6 +421,7 @@ public final class Transmitter: BluetoothManagerDelegate {
+@@ -400,6 +423,7 @@ public final class Transmitter: BluetoothManagerDelegate {
      func bluetoothManager(_ manager: BluetoothManager, peripheralManager: PeripheralManager, didReceiveAuthenticationResponse response: Data) {
  
          if let message = AuthChallengeRxMessage(data: response), message.isBonded, message.isAuthenticated {
@@ -522,7 +524,7 @@ index 7c10d41..cc26b24 100644
              self.log.debug("Observed authenticated session. enabling notifications for control characteristic.")
              peripheralManager.perform { (peripheral) in
                  // Stopping updates from authentication simultaneously with Dexcom's app causes CoreBluetooth to get into a weird state.
-@@ -413,7 +435,9 @@ public final class Transmitter: BluetoothManagerDelegate {
+@@ -413,7 +437,9 @@ public final class Transmitter: BluetoothManagerDelegate {
  
                  do {
                      try peripheral.listenToCharacteristic(.control)
@@ -532,7 +534,7 @@ index 7c10d41..cc26b24 100644
                      self.log.error("Error trying to enable notifications on control characteristic: %{public}@", String(describing: error))
                      self.delegateQueue.async {
                          self.delegate?.transmitter(self, didError: error)
-@@ -421,6 +445,9 @@ public final class Transmitter: BluetoothManagerDelegate {
+@@ -421,6 +447,9 @@ public final class Transmitter: BluetoothManagerDelegate {
                  }
              }
          } else {

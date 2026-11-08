@@ -106,6 +106,19 @@ extension CGMSettings {
                     }.listRowBackground(Color.chart)
                 }
 
+                if state.cgmCurrent.type == .plugin, state.isDexcomTransmitterCGM {
+                    Section {
+                        Toggle("Allow Redundant Reconnect (A/B Test)", isOn: $state.allowRedundantReconnect)
+                    } header: {
+                        Text("G6 Diagnostics")
+                    } footer: {
+                        Text(
+                            "Off is the duplicate-connection fix. On restores the old reconnect behavior, which missed about 1 in 5 readings in affected cycles. Turn on only for a deliberate test, then turn it off."
+                        )
+                    }
+                    .listRowBackground(Color.chart)
+                }
+
                 SettingInputSection(
                     decimalValue: $decimalPlaceholder,
                     booleanValue: $state.smoothGlucose,
