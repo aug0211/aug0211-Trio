@@ -1,0 +1,544 @@
+diff --git a/CGMBLEKit/CGMBLEKit/BluetoothManager.swift b/CGMBLEKit/CGMBLEKit/BluetoothManager.swift
+index 556bd2e..e615633 100644
+--- a/CGMBLEKit/CGMBLEKit/BluetoothManager.swift
++++ b/CGMBLEKit/CGMBLEKit/BluetoothManager.swift
+@@ -133,11 +133,38 @@ class BluetoothManager: NSObject {
+ 
+     // MARK: - Actions
+ 
+-    func scanForPeripheral() {
++    func scanForPeripheral(caller: String = "scanForPeripheral") {
+         dispatchPrecondition(condition: .notOnQueue(managerQueue))
+ 
+         managerQueue.sync {
+-            self.managerQueue_scanForPeripheral()
++            self.managerQueue_scanForPeripheral(caller: caller)
++        }
++    }
++
++    /// Re-arms the connection for the periodic caller (`Transmitter.resumeScanning()`, called from
++    /// `TransmitterManager.fetchNewDataIfNeeded`). Unlike `scanForPeripheral()`, this does not
++    /// re-issue `connect()` while a connection is already pending.
++    ///
++    /// Re-issuing `connect()` for a `.connecting` peripheral does nothing useful while the link is
++    /// down, but when it lands in the instant the link comes up CoreBluetooth delivers a second
++    /// `didConnect`. That queues a second authentication subscription, and while it is pending
++    /// `PeripheralManager` discards incoming indications, which is where passive-mode readings
++    /// were being lost. The state check and the connect decision happen in one `managerQueue`
++    /// block, so they cannot be split by a `didConnect` callback.
++    ///
++    /// - Parameter allowRedundantConnect: Debug-only A/B switch. When true, behaves as before.
++    func resumeScanningIfIdle(allowRedundantConnect: Bool) {
++        dispatchPrecondition(condition: .notOnQueue(managerQueue))
++
++        managerQueue.sync {
++            let currentState = self.peripheral?.state ?? .disconnected
++
++            if currentState == .connecting && !allowRedundantConnect {
++                G6SessionDiagnostics.shared.reconnectDecision(caller: "resumeScanning", state: currentState.diagnosticName, action: "skipped")
++                return
++            }
++
++            self.managerQueue_scanForPeripheral(caller: allowRedundantConnect ? "resumeScanning(redundantAllowed)" : "resumeScanning")
+         }
+     }
+ 
+@@ -155,20 +182,25 @@ class BluetoothManager: NSObject {
+         }
+     }
+ 
+-    private func managerQueue_scanForPeripheral() {
++    private func managerQueue_scanForPeripheral(caller: String) {
+         dispatchPrecondition(condition: .onQueue(managerQueue))
+ 
++        let diagnostics = G6SessionDiagnostics.shared
++
+         guard manager.state == .poweredOn else {
++            diagnostics.reconnectDecision(caller: caller, state: "centralNotPoweredOn", action: "skipped")
+             return
+         }
+ 
+         let currentState = peripheral?.state ?? .disconnected
+         guard currentState != .connected else {
++            diagnostics.reconnectDecision(caller: caller, state: currentState.diagnosticName, action: "skipped")
+             return
+         }
+ 
+         if let peripheralID = peripheralIdentifier, let peripheral = manager.retrievePeripherals(withIdentifiers: [peripheralID]).first {
+             log.debug("Re-connecting to known peripheral %{public}@", peripheral.identifier.uuidString)
++            diagnostics.reconnectDecision(caller: caller, state: currentState.diagnosticName, action: "connect(known)")
+             self.peripheral = peripheral
+             self.manager.connect(peripheral)
+         } else if let peripheral = manager.retrieveConnectedPeripherals(withServices: [
+@@ -178,10 +210,12 @@ class BluetoothManager: NSObject {
+             delegate == nil || delegate!.bluetoothManager(self, shouldConnectPeripheral: peripheral)
+         {
+             log.debug("Found system-connected peripheral: %{public}@", peripheral.identifier.uuidString)
++            diagnostics.reconnectDecision(caller: caller, state: currentState.diagnosticName, action: "connect(systemConnected)")
+             self.peripheral = peripheral
+             self.manager.connect(peripheral)
+         } else {
+             log.debug("Scanning for peripherals")
++            diagnostics.reconnectDecision(caller: caller, state: currentState.diagnosticName, action: "scan")
+             manager.scanForPeripherals(withServices: [
+                     TransmitterServiceUUID.advertisement.cbUUID
+                 ],
+@@ -202,7 +236,7 @@ class BluetoothManager: NSObject {
+         DispatchQueue.global(qos: .utility).async {
+             Thread.sleep(forTimeInterval: 2)
+ 
+-            self.scanForPeripheral()
++            self.scanForPeripheral(caller: "scanAfterDelay")
+         }
+     }
+ 
+@@ -236,7 +270,7 @@ extension BluetoothManager: CBCentralManagerDelegate {
+ 
+         switch central.state {
+         case .poweredOn:
+-            managerQueue_scanForPeripheral()
++            managerQueue_scanForPeripheral(caller: "poweredOn")
+         case .resetting, .poweredOff, .unauthorized, .unknown, .unsupported:
+             fallthrough
+         @unknown default:
+@@ -276,6 +310,8 @@ extension BluetoothManager: CBCentralManagerDelegate {
+         dispatchPrecondition(condition: .onQueue(managerQueue))
+ 
+         log.default("%{public}@: %{public}@", #function, peripheral)
++        G6SessionDiagnostics.shared.didConnect()
++
+         if central.isScanning {
+             central.stopScan()
+         }
+@@ -290,6 +326,8 @@ extension BluetoothManager: CBCentralManagerDelegate {
+     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
+         dispatchPrecondition(condition: .onQueue(managerQueue))
+         log.default("%{public}@: %{public}@", #function, peripheral)
++        G6SessionDiagnostics.shared.didDisconnect(errorCode: (error as NSError?)?.code)
++
+         // Ignore errors indicating the peripheral disconnected remotely, as that's expected behavior
+         if let error = error as NSError?, CBError(_nsError: error).code != .peripheralDisconnected {
+             log.error("%{public}@: %{public}@", #function, error)
+@@ -307,6 +345,8 @@ extension BluetoothManager: CBCentralManagerDelegate {
+         dispatchPrecondition(condition: .onQueue(managerQueue))
+ 
+         log.error("%{public}@: %{public}@", #function, String(describing: error))
++        G6SessionDiagnostics.shared.milestone("didFailToConnect", "err=\(String(describing: (error as NSError?)?.code))")
++
+         if let error = error, let peripheralManager = peripheralManager {
+             self.delegate?.bluetoothManager(self, peripheralManager: peripheralManager, isReadyWithError: error)
+         }
+@@ -348,3 +388,222 @@ extension BluetoothManager: PeripheralManagerDelegate {
+         }
+     }
+ }
++
++
++// MARK: - [G6DIAG] Session diagnostics
++
++extension CBPeripheralState {
++    var diagnosticName: String {
++        switch self {
++        case .disconnected:
++            return "disconnected"
++        case .connecting:
++            return "connecting"
++        case .connected:
++            return "connected"
++        case .disconnecting:
++            return "disconnecting"
++        @unknown default:
++            return "unknown(\(rawValue))"
++        }
++    }
++}
++
++
++/// Logging-only diagnostics for the G5/G6 connection lifecycle. Nothing here changes Bluetooth
++/// behavior.
++///
++/// Every line is tagged `[G6DIAG]` and logged at default level, so Trio's CGM log export (which
++/// reads persisted `com.loopkit.CGMBLEKit` entries) captures it. Times are seconds since the first
++/// `didConnect` of the session on the monotonic uptime clock. Each session ends with one
++/// `summary` line, which is what offline analysis keys on.
++final class G6SessionDiagnostics {
++    static let shared = G6SessionDiagnostics()
++
++    private let log = OSLog(category: "G6Diagnostics")
++
++    private let lock = NSLock()
++
++    // All state below is guarded by `lock`
++    private var sessionNumber = 0
++    private var sessionStart: TimeInterval?
++    private var connectCount = 0
++    private var skippedReconnectAt: TimeInterval?
++    private var redundantConnectAt: TimeInterval?
++    private var skippedReconnectMsBefore: Int?
++    private var redundantConnectMsBefore: Int?
++    private var milestones: [(name: String, elapsed: TimeInterval)] = []
++    private var controlOpcodes: [String] = []
++    private var dropCount = 0
++
++    private init() {}
++
++    private var uptime: TimeInterval {
++        return ProcessInfo.processInfo.systemUptime
++    }
++
++    /// Records what `BluetoothManager` did when asked to (re)connect.
++    func reconnectDecision(caller: String, state: String, action: String) {
++        let now = uptime
++
++        lock.lock()
++        if state == "connecting" {
++            if action == "skipped" {
++                skippedReconnectAt = now
++            } else if action.hasPrefix("connect") {
++                redundantConnectAt = now
++            }
++        }
++        let session = sessionStart == nil ? "idle" : "S\(sessionNumber)"
++        lock.unlock()
++
++        emit("reconnect caller=\(caller) state=\(state) action=\(action) session=\(session) uptime=\(G6SessionDiagnostics.format(now))")
++    }
++
++    func didConnect() {
++        let now = uptime
++        let line: String
++
++        lock.lock()
++        if let start = sessionStart, now - start < 10 {
++            connectCount += 1
++            line = "S\(sessionNumber) didConnect #\(connectCount) DUPLICATE +\(G6SessionDiagnostics.format(now - start))"
++        } else {
++            sessionNumber += 1
++            sessionStart = now
++            connectCount = 1
++            milestones = []
++            controlOpcodes = []
++            dropCount = 0
++            skippedReconnectMsBefore = G6SessionDiagnostics.millisecondsBefore(now, skippedReconnectAt)
++            redundantConnectMsBefore = G6SessionDiagnostics.millisecondsBefore(now, redundantConnectAt)
++            skippedReconnectAt = nil
++            redundantConnectAt = nil
++            line = "S\(sessionNumber) didConnect #1 skippedReconnectMsBefore=\(G6SessionDiagnostics.describe(skippedReconnectMsBefore)) redundantConnectMsBefore=\(G6SessionDiagnostics.describe(redundantConnectMsBefore)) uptime=\(G6SessionDiagnostics.format(now))"
++        }
++        lock.unlock()
++
++        emit(line)
++    }
++
++    /// Records a named step of the current session.
++    func milestone(_ name: String, _ detail: String = "") {
++        let now = uptime
++        let suffix = detail.isEmpty ? "" : " " + detail
++        let line: String
++
++        lock.lock()
++        if let start = sessionStart {
++            let elapsed = now - start
++            milestones.append((name: name, elapsed: elapsed))
++            line = "S\(sessionNumber) +\(G6SessionDiagnostics.format(elapsed)) \(name)\(suffix)"
++        } else {
++            line = "idle \(name)\(suffix)"
++        }
++        lock.unlock()
++
++        emit(line)
++    }
++
++    /// Records an indication received on the control characteristic.
++    func controlResponse(_ response: Data) {
++        guard let opcode = response.first else {
++            return
++        }
++        let code = String(format: "%02x", opcode)
++
++        lock.lock()
++        if sessionStart != nil {
++            controlOpcodes.append(code)
++        }
++        lock.unlock()
++
++        milestone("controlRx", "op=\(code) len=\(response.count)")
++    }
++
++    /// Records an unsolicited value that `PeripheralManager` discarded because a command was pending.
++    func droppedValue(characteristic: String, value: Data?, pending: String) {
++        var opcode = "none"
++        if let byte = value?.first {
++            opcode = String(format: "%02x", byte)
++        }
++
++        lock.lock()
++        dropCount += 1
++        lock.unlock()
++
++        milestone("DROPPED", "char=\(characteristic) op=\(opcode) len=\(value?.count ?? 0) pending=\(pending)")
++    }
++
++    func didDisconnect(errorCode: Int?) {
++        let now = uptime
++        let line: String
++
++        lock.lock()
++        if let start = sessionStart {
++            let ops = controlOpcodes.isEmpty ? "none" : controlOpcodes.joined(separator: ",")
++            let parts: [String] = [
++                "S\(sessionNumber) summary",
++                "conns=\(connectCount)",
++                "skippedReconnectMsBefore=\(G6SessionDiagnostics.describe(skippedReconnectMsBefore))",
++                "redundantConnectMsBefore=\(G6SessionDiagnostics.describe(redundantConnectMsBefore))",
++                "authSub=\(firstTime("authSubscribed"))",
++                "authOK=\(firstTime("authRxAccepted"))",
++                "ctrlSub=\(firstTime("controlSubscribed"))",
++                "glucose=\(firstTime("glucose"))",
++                "drops=\(dropCount)",
++                "ops=\(ops)",
++                "end=+\(G6SessionDiagnostics.format(now - start))",
++                "err=\(G6SessionDiagnostics.describe(errorCode))",
++            ]
++            line = parts.joined(separator: " ")
++            sessionStart = nil
++        } else {
++            line = "idle didDisconnect err=\(G6SessionDiagnostics.describe(errorCode))"
++        }
++        lock.unlock()
++
++        emit(line)
++    }
++
++    /// Short name for a G5/G6 characteristic, for log lines.
++    static func name(for uuid: CBUUID) -> String {
++        if let known = CGMServiceCharacteristicUUID(rawValue: uuid.uuidString.uppercased()) {
++            return String(describing: known)
++        }
++        return uuid.uuidString
++    }
++
++    // MARK: Private
++
++    /// Must be called with `lock` held.
++    private func firstTime(_ name: String) -> String {
++        guard let match = milestones.first(where: { $0.name == name }) else {
++            return "none"
++        }
++        return "+" + G6SessionDiagnostics.format(match.elapsed)
++    }
++
++    private func emit(_ message: String) {
++        log.default("[G6DIAG] %{public}@", message)
++    }
++
++    private static func format(_ seconds: TimeInterval) -> String {
++        return String(format: "%.3f", seconds)
++    }
++
++    private static func describe(_ value: Int?) -> String {
++        guard let value = value else {
++            return "none"
++        }
++        return "\(value)"
++    }
++
++    /// Milliseconds from `event` to `now`, if `event` happened in the 5 seconds before `now`.
++    private static func millisecondsBefore(_ now: TimeInterval, _ event: TimeInterval?) -> Int? {
++        guard let event = event, now >= event, now - event < 5 else {
++            return nil
++        }
++        return Int(((now - event) * 1000).rounded())
++    }
++}
+diff --git a/CGMBLEKit/CGMBLEKit/PeripheralManager.swift b/CGMBLEKit/CGMBLEKit/PeripheralManager.swift
+index 8239e10..563b3ea 100644
+--- a/CGMBLEKit/CGMBLEKit/PeripheralManager.swift
++++ b/CGMBLEKit/CGMBLEKit/PeripheralManager.swift
+@@ -91,6 +91,24 @@ extension PeripheralManager {
+     }
+ }
+ 
++extension PeripheralManager.CommandCondition {
++    /// [G6DIAG] Short description for diagnostics log lines.
++    var diagnosticDescription: String {
++        switch self {
++        case .notificationStateUpdate(let characteristicUUID, let enabled):
++            return "notify(\(G6SessionDiagnostics.name(for: characteristicUUID)),\(enabled))"
++        case .valueUpdate(let characteristic, _):
++            return "value(\(G6SessionDiagnostics.name(for: characteristic.uuid)))"
++        case .write(let characteristic):
++            return "write(\(G6SessionDiagnostics.name(for: characteristic.uuid)))"
++        case .discoverServices:
++            return "discoverServices"
++        case .discoverCharacteristicsForService:
++            return "discoverCharacteristics"
++        }
++    }
++}
++
+ protocol PeripheralManagerDelegate: AnyObject {
+     func peripheralManager(_ manager: PeripheralManager, didUpdateValueFor characteristic: CBCharacteristic)
+ 
+@@ -217,6 +235,8 @@ extension PeripheralManager {
+         }
+ 
+         guard signaled else {
++            let pending = commandConditions.map { $0.diagnosticDescription }.joined(separator: ",")
++            G6SessionDiagnostics.shared.milestone("commandTimeout", "pending=\(pending)")
+             throw PeripheralManagerError.timeout
+         }
+ 
+@@ -371,6 +391,11 @@ extension PeripheralManager: CBPeripheralDelegate {
+         }
+ 
+         commandLock.unlock()
++
++        G6SessionDiagnostics.shared.milestone(
++            "notifyState",
++            "char=\(G6SessionDiagnostics.name(for: characteristic.uuid)) on=\(characteristic.isNotifying) err=\(String(describing: error))"
++        )
+     }
+ 
+     func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: Error?) {
+@@ -398,6 +423,7 @@ extension PeripheralManager: CBPeripheralDelegate {
+         commandLock.lock()
+ 
+         var notifyDelegate = false
++        var droppedWhilePending: String?
+ 
+         if let index = commandConditions.firstIndex(where: { (condition) -> Bool in
+             if case .valueUpdate(characteristic: characteristic, matching: let matching) = condition {
+@@ -416,10 +442,22 @@ extension PeripheralManager: CBPeripheralDelegate {
+             macro(self)
+         } else if commandConditions.isEmpty {
+             notifyDelegate = true // execute after the unlock
++        } else {
++            // [G6DIAG] Unchanged behavior: an unsolicited value that arrives while another command
++            // is pending is not passed to the delegate. Record it so the loss is visible.
++            droppedWhilePending = commandConditions.map { $0.diagnosticDescription }.joined(separator: ",")
+         }
+ 
+         commandLock.unlock()
+ 
++        if let pending = droppedWhilePending {
++            G6SessionDiagnostics.shared.droppedValue(
++                characteristic: G6SessionDiagnostics.name(for: characteristic.uuid),
++                value: characteristic.value,
++                pending: pending
++            )
++        }
++
+         if notifyDelegate {
+             // If we weren't expecting this notification, pass it along to the delegate
+             delegate?.peripheralManager(self, didUpdateValueFor: characteristic)
+diff --git a/CGMBLEKit/CGMBLEKit/Transmitter.swift b/CGMBLEKit/CGMBLEKit/Transmitter.swift
+index 7c10d41..cc26b24 100644
+--- a/CGMBLEKit/CGMBLEKit/Transmitter.swift
++++ b/CGMBLEKit/CGMBLEKit/Transmitter.swift
+@@ -72,6 +72,19 @@ public final class Transmitter: BluetoothManagerDelegate {
+ 
+     public var needsExpiryRead: Bool = false
+ 
++    /// Debug-only switch for an A/B check of the redundant-connect fix. When true,
++    /// `resumeScanning()` behaves as it did before the fix and may re-issue `connect()` while a
++    /// connection is already pending. Leave false for normal use.
++    public var allowRedundantReconnect: Bool {
++        get {
++            return lockedAllowRedundantReconnect.value
++        }
++        set {
++            lockedAllowRedundantReconnect.value = newValue
++        }
++    }
++    private let lockedAllowRedundantReconnect: Locked<Bool> = Locked(false)
++
+     public weak var delegate: TransmitterDelegate?
+ 
+     public weak var commandSource: TransmitterCommandSource?
+@@ -117,7 +130,8 @@ public final class Transmitter: BluetoothManagerDelegate {
+ 
+     public func resumeScanning() {
+         if stayConnected {
+-            bluetoothManager.scanForPeripheral()
++            // Does not re-issue connect() while a connection is pending; see resumeScanningIfIdle.
++            bluetoothManager.resumeScanningIfIdle(allowRedundantConnect: allowRedundantReconnect)
+         }
+     }
+ 
+@@ -146,7 +160,7 @@ public final class Transmitter: BluetoothManagerDelegate {
+             bluetoothManager.stayConnected = newValue
+ 
+             if newValue {
+-                bluetoothManager.scanForPeripheral()
++                bluetoothManager.scanForPeripheral(caller: "stayConnected")
+             }
+         }
+     }
+@@ -170,7 +184,9 @@ public final class Transmitter: BluetoothManagerDelegate {
+                 self.log.debug("Listening for authentication responses in passive mode")
+                 do {
+                     try peripheral.listenToCharacteristic(.authentication)
++                    G6SessionDiagnostics.shared.milestone("authSubscribed")
+                 } catch let error {
++                    G6SessionDiagnostics.shared.milestone("authSubscribeFailed", String(describing: error))
+                     self.delegateQueue.async {
+                         self.delegate?.transmitter(self, didError: error)
+                     }
+@@ -260,16 +276,20 @@ public final class Transmitter: BluetoothManagerDelegate {
+ 
+         guard response.count > 0 else { return }
+ 
++        G6SessionDiagnostics.shared.controlResponse(response)
++
+         switch Opcode(rawValue: response[0]) {
+         case .glucoseRx?, .glucoseG6Rx?:
+             if  let glucoseMessage = GlucoseRxMessage(data: response),
+                 let timeMessage = lastTimeMessage,
+                 let activationDate = activationDate
+             {
++                G6SessionDiagnostics.shared.milestone("glucose")
+                 delegateQueue.async {
+                     self.delegate?.transmitter(self, didRead: Glucose(transmitterID: self.id.id, glucoseMessage: glucoseMessage, timeMessage: timeMessage, calibrationMessage: self.lastCalibrationMessage, activationDate: activationDate))
+                 }
+             } else {
++                G6SessionDiagnostics.shared.milestone("glucoseRejected", "hasTime=\(lastTimeMessage != nil) hasActivation=\(activationDate != nil)")
+                 delegateQueue.async {
+                     self.delegate?.transmitter(self, didError: TransmitterError.observationError("Unable to handle glucose control response"))
+                 }
+@@ -279,6 +299,7 @@ public final class Transmitter: BluetoothManagerDelegate {
+                 // Subscribe to backfill updates
+                 do {
+                     try peripheral.listenToCharacteristic(.backfill)
++                    G6SessionDiagnostics.shared.milestone("backfillSubscribed")
+                 } catch let error {
+                     self.log.error("Error trying to enable notifications on backfill characteristic: %{public}@", String(describing: error))
+                     self.delegateQueue.async {
+@@ -400,6 +421,7 @@ public final class Transmitter: BluetoothManagerDelegate {
+     func bluetoothManager(_ manager: BluetoothManager, peripheralManager: PeripheralManager, didReceiveAuthenticationResponse response: Data) {
+ 
+         if let message = AuthChallengeRxMessage(data: response), message.isBonded, message.isAuthenticated {
++            G6SessionDiagnostics.shared.milestone("authRxAccepted", "bytes=\(response.hexadecimalString)")
+             self.log.debug("Observed authenticated session. enabling notifications for control characteristic.")
+             peripheralManager.perform { (peripheral) in
+                 // Stopping updates from authentication simultaneously with Dexcom's app causes CoreBluetooth to get into a weird state.
+@@ -413,7 +435,9 @@ public final class Transmitter: BluetoothManagerDelegate {
+ 
+                 do {
+                     try peripheral.listenToCharacteristic(.control)
++                    G6SessionDiagnostics.shared.milestone("controlSubscribed")
+                 } catch let error {
++                    G6SessionDiagnostics.shared.milestone("controlSubscribeFailed", String(describing: error))
+                     self.log.error("Error trying to enable notifications on control characteristic: %{public}@", String(describing: error))
+                     self.delegateQueue.async {
+                         self.delegate?.transmitter(self, didError: error)
+@@ -421,6 +445,9 @@ public final class Transmitter: BluetoothManagerDelegate {
+                 }
+             }
+         } else {
++            // Only the opcode and length: other auth messages carry handshake material
++            let opcode = response.first.map { String(format: "%02x", $0) } ?? "none"
++            G6SessionDiagnostics.shared.milestone("authRxIgnored", "op=\(opcode) len=\(response.count)")
+             self.log.debug("Ignoring authentication response: %{public}@", response.hexadecimalString)
+         }
+     }
