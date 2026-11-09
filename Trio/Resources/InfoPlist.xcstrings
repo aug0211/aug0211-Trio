@@ -417,7 +417,7 @@
     },
     "NSAlarmKitUsageDescription" : {
       "comment" : "Privacy - Alarm Kit Usage Description",
-      "extractionState" : "stale",
+      "extractionState" : "extracted_with_value",
       "localizations" : {
         "bg" : {
           "stringUnit" : {
@@ -1101,6 +1101,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "行事曆用於建立新的血糖事件。"
+          }
+        }
+      }
+    },
+    "NSCameraUsageDescription" : {
+      "comment" : "Privacy - Camera Usage Description",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Camera is used to scan the code on your Dexcom sensor packaging."
           }
         }
       }
