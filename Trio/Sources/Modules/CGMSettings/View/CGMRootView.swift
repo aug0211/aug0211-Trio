@@ -108,12 +108,14 @@ extension CGMSettings {
 
                 if state.cgmCurrent.type == .plugin, state.isDexcomTransmitterCGM {
                     Section {
-                        Toggle("Allow Redundant Reconnect (A/B Test)", isOn: $state.allowRedundantReconnect)
+                        Toggle("Redundant Reconnect Fix", isOn: $state.redundantReconnectFixEnabled)
+                        Toggle("Keep Messages During Setup", isOn: $state.keepMessagesFixEnabled)
+                        Toggle("Recover Missed Authentication", isOn: $state.authRecoveryFixEnabled)
                     } header: {
                         Text("G6 Diagnostics")
                     } footer: {
                         Text(
-                            "Off is the duplicate-connection fix. On restores the old reconnect behavior, which missed about 1 in 5 readings in affected cycles. Turn on only for a deliberate test, then turn it off."
+                            "Dexcom G6 Bluetooth fixes. All on is the default. Turn one off only for a deliberate test; changes apply immediately and are recorded in the CGM log export."
                         )
                     }
                     .listRowBackground(Color.chart)

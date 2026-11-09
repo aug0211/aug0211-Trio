@@ -31,22 +31,32 @@ final class PluginSource: GlucoseSource {
     var cgmManager: CGMManagerUI? {
         didSet {
             publishCGMStatus()
-            Self.applyRedundantReconnectSetting(to: cgmManager)
+            Self.applyG6FixSettings(to: cgmManager)
         }
     }
 
-    /// UserDefaults key for the debug-only G5/G6 redundant-reconnect switch in CGM settings.
+    /// UserDefaults keys for the G5/G6 Bluetooth fix switches in CGM settings ("G6 Diagnostics").
+    /// The reconnect key keeps its original meaning: false (the default) means the fix is on.
     static let allowRedundantReconnectKey = "G6DiagnosticsAllowRedundantReconnect"
+    static let keepMessagesDuringSubscriptionSetupKey = "G6FixKeepMessagesDuringSubscriptionSetup"
+    static let recoverMissedAuthenticationKey = "G6FixRecoverMissedAuthentication"
 
-    /// Applies the CGM settings A/B switch to a G5/G6 transmitter. Off (the fixed reconnect
-    /// behavior) unless deliberately turned on. Requires the CGMBLEKit patch in `patches/`.
-    static func applyRedundantReconnectSetting(to manager: CGMManagerUI?) {
-        let allow = UserDefaults.standard.bool(forKey: allowRedundantReconnectKey)
-        if let manager = manager as? G6CGMManager {
-            manager.transmitter.allowRedundantReconnect = allow
-        } else if let manager = manager as? G5CGMManager {
-            manager.transmitter.allowRedundantReconnect = allow
-        }
+    /// A stored switch, or `defaultValue` if it was never set.
+    static func g6FixSetting(_ key: String, defaultValue: Bool) -> Bool {
+        UserDefaults.standard.object(forKey: key) as? Bool ?? defaultValue
+    }
+
+    /// Applies the CGM settings switches to a G5/G6 transmitter. Every fix is on unless turned off.
+    /// Requires the CGMBLEKit patch in `patches/`.
+    static func applyG6FixSettings(to manager: CGMManagerUI?) {
+        guard let transmitter = (manager as? TransmitterManager)?.transmitter else { return }
+
+        transmitter.allowRedundantReconnect = g6FixSetting(allowRedundantReconnectKey, defaultValue: false)
+        transmitter.keepMessagesDuringSubscriptionSetup = g6FixSetting(
+            keepMessagesDuringSubscriptionSetupKey,
+            defaultValue: true
+        )
+        transmitter.recoverMissedAuthentication = g6FixSetting(recoverMissedAuthenticationKey, defaultValue: true)
     }
 
     var cgmHasValidSensorSession: Bool = false
@@ -61,7 +71,7 @@ final class PluginSource: GlucoseSource {
         cgmManager?.cgmManagerDelegate = self
         // didSet doesn't fire from the defining class's own init.
         publishCGMStatus()
-        Self.applyRedundantReconnectSetting(to: cgmManager)
+        Self.applyG6FixSettings(to: cgmManager)
     }
 
     /// Republishes the manager's lifecycle/highlight to the subjects.

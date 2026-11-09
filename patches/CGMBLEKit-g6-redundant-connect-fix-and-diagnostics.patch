@@ -1,5 +1,5 @@
 diff --git a/CGMBLEKit/CGMBLEKit/BluetoothManager.swift b/CGMBLEKit/CGMBLEKit/BluetoothManager.swift
-index 556bd2e..e615633 100644
+index 556bd2e..1322e44 100644
 --- a/CGMBLEKit/CGMBLEKit/BluetoothManager.swift
 +++ b/CGMBLEKit/CGMBLEKit/BluetoothManager.swift
 @@ -133,11 +133,38 @@ class BluetoothManager: NSObject {
@@ -128,7 +128,7 @@ index 556bd2e..e615633 100644
          if let error = error, let peripheralManager = peripheralManager {
              self.delegate?.bluetoothManager(self, peripheralManager: peripheralManager, isReadyWithError: error)
          }
-@@ -348,3 +388,222 @@ extension BluetoothManager: PeripheralManagerDelegate {
+@@ -348,3 +388,275 @@ extension BluetoothManager: PeripheralManagerDelegate {
          }
      }
  }
@@ -179,6 +179,7 @@ index 556bd2e..e615633 100644
 +    private var milestones: [(name: String, elapsed: TimeInterval)] = []
 +    private var controlOpcodes: [String] = []
 +    private var dropCount = 0
++    private var forwardCount = 0
 +
 +    private init() {}
 +
@@ -219,6 +220,7 @@ index 556bd2e..e615633 100644
 +            milestones = []
 +            controlOpcodes = []
 +            dropCount = 0
++            forwardCount = 0
 +            skippedReconnectMsBefore = G6SessionDiagnostics.millisecondsBefore(now, skippedReconnectAt)
 +            redundantConnectMsBefore = G6SessionDiagnostics.millisecondsBefore(now, redundantConnectAt)
 +            skippedReconnectAt = nil
@@ -279,6 +281,20 @@ index 556bd2e..e615633 100644
 +        milestone("DROPPED", "char=\(characteristic) op=\(opcode) len=\(value?.count ?? 0) pending=\(pending)")
 +    }
 +
++    /// Records an unsolicited value that F3 passed to the delegate while a subscription setup was pending.
++    func forwardedValue(characteristic: String, value: Data?, pending: String) {
++        var opcode = "none"
++        if let byte = value?.first {
++            opcode = String(format: "%02x", byte)
++        }
++
++        lock.lock()
++        forwardCount += 1
++        lock.unlock()
++
++        milestone("FORWARDED", "char=\(characteristic) op=\(opcode) len=\(value?.count ?? 0) pending=\(pending)")
++    }
++
 +    func didDisconnect(errorCode: Int?) {
 +        let now = uptime
 +        let line: String
@@ -296,6 +312,7 @@ index 556bd2e..e615633 100644
 +                "ctrlSub=\(firstTime("controlSubscribed"))",
 +                "glucose=\(firstTime("glucose"))",
 +                "drops=\(dropCount)",
++                "fwd=\(forwardCount)",
 +                "ops=\(ops)",
 +                "end=+\(G6SessionDiagnostics.format(now - start))",
 +                "err=\(G6SessionDiagnostics.describe(errorCode))",
@@ -351,15 +368,72 @@ index 556bd2e..e615633 100644
 +        return Int(((now - event) * 1000).rounded())
 +    }
 +}
++
++
++// MARK: - Passive-mode fixes
++
++/// Runtime switches for the passive-mode reliability fixes. Both default on. Trio sets them from
++/// CGM settings through the public properties on `Transmitter`.
++final class PassiveModeFixes {
++    static let shared = PassiveModeFixes()
++
++    private let lockedKeepMessagesDuringSubscriptionSetup: Locked<Bool> = Locked(true)
++    private let lockedRecoverMissedAuthentication: Locked<Bool> = Locked(true)
++
++    private init() {}
++
++    /// F3: when the only pending command is a subscription (notification-state) setup, pass
++    /// incoming values to the delegate instead of discarding them.
++    var keepMessagesDuringSubscriptionSetup: Bool {
++        get {
++            return lockedKeepMessagesDuringSubscriptionSetup.value
++        }
++        set {
++            lockedKeepMessagesDuringSubscriptionSetup.value = newValue
++        }
++    }
++
++    /// F4: if the Dexcom app's "authenticated" indication was not seen, read the authentication
++    /// characteristic once to learn whether the session is already authenticated.
++    var recoverMissedAuthentication: Bool {
++        get {
++            return lockedRecoverMissedAuthentication.value
++        }
++        set {
++            lockedRecoverMissedAuthentication.value = newValue
++        }
++    }
++}
 diff --git a/CGMBLEKit/CGMBLEKit/PeripheralManager.swift b/CGMBLEKit/CGMBLEKit/PeripheralManager.swift
-index 8239e10..563b3ea 100644
+index 8239e10..42a27d4 100644
 --- a/CGMBLEKit/CGMBLEKit/PeripheralManager.swift
 +++ b/CGMBLEKit/CGMBLEKit/PeripheralManager.swift
-@@ -91,6 +91,24 @@ extension PeripheralManager {
+@@ -91,6 +91,45 @@ extension PeripheralManager {
      }
  }
  
++extension PeripheralManager {
++    /// F4: reads the current value of a G5/G6 characteristic.
++    func readCurrentValue(of characteristicUUID: CGMServiceCharacteristicUUID, timeout: TimeInterval) throws -> Data? {
++        guard let characteristic = peripheral.getCharacteristicWithUUID(characteristicUUID) else {
++            throw PeripheralManagerError.unknownCharacteristic
++        }
++
++        return try readValue(for: characteristic, timeout: timeout)
++    }
++}
++
 +extension PeripheralManager.CommandCondition {
++    /// F3: true for a pending subscription (notification-state) setup.
++    var isNotificationStateUpdate: Bool {
++        switch self {
++        case .notificationStateUpdate:
++            return true
++        default:
++            return false
++        }
++    }
++
 +    /// [G6DIAG] Short description for diagnostics log lines.
 +    var diagnosticDescription: String {
 +        switch self {
@@ -380,7 +454,7 @@ index 8239e10..563b3ea 100644
  protocol PeripheralManagerDelegate: AnyObject {
      func peripheralManager(_ manager: PeripheralManager, didUpdateValueFor characteristic: CBCharacteristic)
  
-@@ -217,6 +235,8 @@ extension PeripheralManager {
+@@ -217,6 +256,8 @@ extension PeripheralManager {
          }
  
          guard signaled else {
@@ -389,7 +463,7 @@ index 8239e10..563b3ea 100644
              throw PeripheralManagerError.timeout
          }
  
-@@ -371,6 +391,11 @@ extension PeripheralManager: CBPeripheralDelegate {
+@@ -371,6 +412,11 @@ extension PeripheralManager: CBPeripheralDelegate {
          }
  
          commandLock.unlock()
@@ -401,21 +475,30 @@ index 8239e10..563b3ea 100644
      }
  
      func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: Error?) {
-@@ -398,6 +423,7 @@ extension PeripheralManager: CBPeripheralDelegate {
+@@ -398,6 +444,8 @@ extension PeripheralManager: CBPeripheralDelegate {
          commandLock.lock()
  
          var notifyDelegate = false
 +        var droppedWhilePending: String?
++        var forwardedWhilePending: String?
  
          if let index = commandConditions.firstIndex(where: { (condition) -> Bool in
              if case .valueUpdate(characteristic: characteristic, matching: let matching) = condition {
-@@ -416,10 +442,22 @@ extension PeripheralManager: CBPeripheralDelegate {
+@@ -416,10 +464,38 @@ extension PeripheralManager: CBPeripheralDelegate {
              macro(self)
          } else if commandConditions.isEmpty {
              notifyDelegate = true // execute after the unlock
++        } else if PassiveModeFixes.shared.keepMessagesDuringSubscriptionSetup,
++            commandConditions.allSatisfy({ $0.isNotificationStateUpdate })
++        {
++            // F3: the only pending command is a subscription setup, which can never consume this
++            // value. Pass it on instead of discarding it; in passive mode the discarded value was
++            // sometimes the Dexcom app's "authenticated" indication, which loses the reading.
++            notifyDelegate = true // execute after the unlock
++            forwardedWhilePending = commandConditions.map { $0.diagnosticDescription }.joined(separator: ",")
 +        } else {
-+            // [G6DIAG] Unchanged behavior: an unsolicited value that arrives while another command
-+            // is pending is not passed to the delegate. Record it so the loss is visible.
++            // [G6DIAG] An unsolicited value that arrives while a read, write or discovery is pending
++            // is not passed to the delegate. Record it so the loss is visible.
 +            droppedWhilePending = commandConditions.map { $0.diagnosticDescription }.joined(separator: ",")
          }
  
@@ -429,14 +512,22 @@ index 8239e10..563b3ea 100644
 +            )
 +        }
 +
++        if let pending = forwardedWhilePending {
++            G6SessionDiagnostics.shared.forwardedValue(
++                characteristic: G6SessionDiagnostics.name(for: characteristic.uuid),
++                value: characteristic.value,
++                pending: pending
++            )
++        }
++
          if notifyDelegate {
              // If we weren't expecting this notification, pass it along to the delegate
              delegate?.peripheralManager(self, didUpdateValueFor: characteristic)
 diff --git a/CGMBLEKit/CGMBLEKit/Transmitter.swift b/CGMBLEKit/CGMBLEKit/Transmitter.swift
-index 7c10d41..0849b62 100644
+index 7c10d41..314d444 100644
 --- a/CGMBLEKit/CGMBLEKit/Transmitter.swift
 +++ b/CGMBLEKit/CGMBLEKit/Transmitter.swift
-@@ -72,6 +72,21 @@ public final class Transmitter: BluetoothManagerDelegate {
+@@ -72,6 +72,51 @@ public final class Transmitter: BluetoothManagerDelegate {
  
      public var needsExpiryRead: Bool = false
  
@@ -455,10 +546,40 @@ index 7c10d41..0849b62 100644
 +    }
 +    private let lockedAllowRedundantReconnect: Locked<Bool> = Locked(false)
 +
++    /// F3 switch, default on. When on, incoming values that arrive while only a subscription setup
++    /// is pending are passed on instead of discarded.
++    public var keepMessagesDuringSubscriptionSetup: Bool {
++        get {
++            return PassiveModeFixes.shared.keepMessagesDuringSubscriptionSetup
++        }
++        set {
++            PassiveModeFixes.shared.keepMessagesDuringSubscriptionSetup = newValue
++            G6SessionDiagnostics.shared.milestone("keepMessagesDuringSubscriptionSetup", "\(newValue)")
++        }
++    }
++
++    /// F4 switch, default on. When on, passive mode reads the authentication characteristic once if
++    /// the Dexcom app's "authenticated" indication was not seen shortly after subscribing.
++    public var recoverMissedAuthentication: Bool {
++        get {
++            return PassiveModeFixes.shared.recoverMissedAuthentication
++        }
++        set {
++            PassiveModeFixes.shared.recoverMissedAuthentication = newValue
++            G6SessionDiagnostics.shared.milestone("recoverMissedAuthentication", "\(newValue)")
++        }
++    }
++
++    /// Passive-mode session state. Set on the manager queue, read on the peripheral manager's queue.
++    private let sessionAuthTrafficSeen: Locked<Bool> = Locked(false)
++
++    /// Passive-mode session state. Only touched on the peripheral manager's queue.
++    private var sessionControlSubscribed = false
++
      public weak var delegate: TransmitterDelegate?
  
      public weak var commandSource: TransmitterCommandSource?
-@@ -117,7 +132,8 @@ public final class Transmitter: BluetoothManagerDelegate {
+@@ -117,7 +162,8 @@ public final class Transmitter: BluetoothManagerDelegate {
  
      public func resumeScanning() {
          if stayConnected {
@@ -468,7 +589,7 @@ index 7c10d41..0849b62 100644
          }
      }
  
-@@ -146,7 +162,7 @@ public final class Transmitter: BluetoothManagerDelegate {
+@@ -146,7 +192,7 @@ public final class Transmitter: BluetoothManagerDelegate {
              bluetoothManager.stayConnected = newValue
  
              if newValue {
@@ -477,17 +598,24 @@ index 7c10d41..0849b62 100644
              }
          }
      }
-@@ -170,7 +186,9 @@ public final class Transmitter: BluetoothManagerDelegate {
+@@ -168,9 +214,16 @@ public final class Transmitter: BluetoothManagerDelegate {
+         peripheralManager.perform { (peripheral) in
+             if self.passiveModeEnabled {
                  self.log.debug("Listening for authentication responses in passive mode")
++                // New session. No authentication message can arrive before the subscription below.
++                self.sessionAuthTrafficSeen.value = false
++                self.sessionControlSubscribed = false
++
                  do {
                      try peripheral.listenToCharacteristic(.authentication)
 +                    G6SessionDiagnostics.shared.milestone("authSubscribed")
++                    self.recoverMissedAuthenticationIfNeeded(peripheral)
                  } catch let error {
 +                    G6SessionDiagnostics.shared.milestone("authSubscribeFailed", String(describing: error))
                      self.delegateQueue.async {
                          self.delegate?.transmitter(self, didError: error)
                      }
-@@ -260,16 +278,20 @@ public final class Transmitter: BluetoothManagerDelegate {
+@@ -260,16 +313,20 @@ public final class Transmitter: BluetoothManagerDelegate {
  
          guard response.count > 0 else { return }
  
@@ -508,7 +636,7 @@ index 7c10d41..0849b62 100644
                  delegateQueue.async {
                      self.delegate?.transmitter(self, didError: TransmitterError.observationError("Unable to handle glucose control response"))
                  }
-@@ -279,6 +301,7 @@ public final class Transmitter: BluetoothManagerDelegate {
+@@ -279,6 +336,7 @@ public final class Transmitter: BluetoothManagerDelegate {
                  // Subscribe to backfill updates
                  do {
                      try peripheral.listenToCharacteristic(.backfill)
@@ -516,26 +644,31 @@ index 7c10d41..0849b62 100644
                  } catch let error {
                      self.log.error("Error trying to enable notifications on backfill characteristic: %{public}@", String(describing: error))
                      self.delegateQueue.async {
-@@ -400,6 +423,7 @@ public final class Transmitter: BluetoothManagerDelegate {
+@@ -398,8 +456,11 @@ public final class Transmitter: BluetoothManagerDelegate {
+     }
+ 
      func bluetoothManager(_ manager: BluetoothManager, peripheralManager: PeripheralManager, didReceiveAuthenticationResponse response: Data) {
++        // Any authentication message means the Dexcom app's handshake is visible to Trio (F4)
++        sessionAuthTrafficSeen.value = true
  
          if let message = AuthChallengeRxMessage(data: response), message.isBonded, message.isAuthenticated {
 +            G6SessionDiagnostics.shared.milestone("authRxAccepted", "bytes=\(response.hexadecimalString)")
              self.log.debug("Observed authenticated session. enabling notifications for control characteristic.")
              peripheralManager.perform { (peripheral) in
                  // Stopping updates from authentication simultaneously with Dexcom's app causes CoreBluetooth to get into a weird state.
-@@ -413,7 +437,9 @@ public final class Transmitter: BluetoothManagerDelegate {
- 
-                 do {
-                     try peripheral.listenToCharacteristic(.control)
-+                    G6SessionDiagnostics.shared.milestone("controlSubscribed")
-                 } catch let error {
-+                    G6SessionDiagnostics.shared.milestone("controlSubscribeFailed", String(describing: error))
-                     self.log.error("Error trying to enable notifications on control characteristic: %{public}@", String(describing: error))
-                     self.delegateQueue.async {
-                         self.delegate?.transmitter(self, didError: error)
-@@ -421,6 +447,9 @@ public final class Transmitter: BluetoothManagerDelegate {
+@@ -411,21 +472,89 @@ public final class Transmitter: BluetoothManagerDelegate {
                  }
+                 */
+ 
+-                do {
+-                    try peripheral.listenToCharacteristic(.control)
+-                } catch let error {
+-                    self.log.error("Error trying to enable notifications on control characteristic: %{public}@", String(describing: error))
+-                    self.delegateQueue.async {
+-                        self.delegate?.transmitter(self, didError: error)
+-                    }
+-                }
++                self.subscribeToControlIfNeeded(peripheral)
              }
          } else {
 +            // Only the opcode and length: other auth messages carry handshake material
@@ -544,3 +677,80 @@ index 7c10d41..0849b62 100644
              self.log.debug("Ignoring authentication response: %{public}@", response.hexadecimalString)
          }
      }
+ }
+ 
++
++// MARK: - Passive-mode recovery
++
++extension Transmitter {
++    /// F4. Passive mode only learns the session is authenticated from the Dexcom app's
++    /// AuthChallengeRx indication. When that indication went by before this subscription took
++    /// effect, nothing subscribed to control and the reading was lost. After a short wait for an
++    /// in-progress handshake to show itself, read the authentication characteristic once instead.
++    ///
++    /// Must run on the peripheral manager's queue, right after the authentication subscription.
++    private func recoverMissedAuthenticationIfNeeded(_ peripheral: PeripheralManager) {
++        guard PassiveModeFixes.shared.recoverMissedAuthentication, !sessionAuthTrafficSeen.value else {
++            return
++        }
++
++        // In most sessions an in-progress handshake shows its first message within ~50 ms of the
++        // subscription. Waiting keeps the read out of those sessions.
++        Thread.sleep(forTimeInterval: 0.05)
++
++        guard !sessionAuthTrafficSeen.value else {
++            return
++        }
++
++        let response: Data?
++        do {
++            response = try peripheral.readCurrentValue(of: .authentication, timeout: 1)
++        } catch let error {
++            G6SessionDiagnostics.shared.milestone("authReadFailed", String(describing: error))
++            return
++        }
++
++        guard let data = response,
++            let message = AuthChallengeRxMessage(data: data),
++            message.isBonded,
++            message.isAuthenticated
++        else {
++            var opcode = "none"
++            if let byte = response?.first {
++                opcode = String(format: "%02x", byte)
++            }
++            G6SessionDiagnostics.shared.milestone("authRead", "op=\(opcode) len=\(response?.count ?? 0) notAuthenticated")
++            return
++        }
++
++        G6SessionDiagnostics.shared.milestone("authRxAccepted", "via=read bytes=\(data.hexadecimalString)")
++        subscribeToControlIfNeeded(peripheral)
++    }
++
++    /// Subscribes to the control characteristic once per session. Only a successful subscription
++    /// counts, so a failed early attempt does not block the normal one.
++    ///
++    /// Must run on the peripheral manager's queue.
++    private func subscribeToControlIfNeeded(_ peripheral: PeripheralManager) {
++        guard !sessionControlSubscribed else {
++            G6SessionDiagnostics.shared.milestone("controlAlreadySubscribed")
++            return
++        }
++
++        do {
++            try peripheral.listenToCharacteristic(.control)
++            sessionControlSubscribed = true
++            G6SessionDiagnostics.shared.milestone("controlSubscribed")
++        } catch let error {
++            G6SessionDiagnostics.shared.milestone("controlSubscribeFailed", String(describing: error))
++            log.error("Error trying to enable notifications on control characteristic: %{public}@", String(describing: error))
++            delegateQueue.async {
++                self.delegate?.transmitter(self, didError: error)
++            }
++        }
++    }
++}
++
+ extension Transmitter: CustomDebugStringConvertible {
+     public var debugDescription: String {
+         return [
