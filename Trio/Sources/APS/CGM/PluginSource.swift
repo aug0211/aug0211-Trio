@@ -36,27 +36,24 @@ final class PluginSource: GlucoseSource {
     }
 
     /// UserDefaults keys for the G5/G6 Bluetooth fix switches in CGM settings ("G6 Diagnostics").
-    /// The reconnect key keeps its original meaning: false (the default) means the fix is on.
-    static let allowRedundantReconnectKey = "G6DiagnosticsAllowRedundantReconnect"
-    static let keepMessagesDuringSubscriptionSetupKey = "G6FixKeepMessagesDuringSubscriptionSetup"
+    /// All three fixes default on, and true always means the fix is active.
+    static let skipRedundantReconnectKey = "G6FixSkipRedundantReconnect"
+    static let keepMessagesDuringSetupKey = "G6FixKeepMessagesDuringSubscriptionSetup"
     static let recoverMissedAuthenticationKey = "G6FixRecoverMissedAuthentication"
 
-    /// A stored switch, or `defaultValue` if it was never set.
-    static func g6FixSetting(_ key: String, defaultValue: Bool) -> Bool {
-        UserDefaults.standard.object(forKey: key) as? Bool ?? defaultValue
+    /// A stored fix switch. On if it was never set.
+    static func isG6FixEnabled(_ key: String) -> Bool {
+        UserDefaults.standard.object(forKey: key) as? Bool ?? true
     }
 
-    /// Applies the CGM settings switches to a G5/G6 transmitter. Every fix is on unless turned off.
-    /// Requires the CGMBLEKit patch in `patches/`.
+    /// Applies the CGM settings switches to a G5/G6 transmitter. Requires the CGMBLEKit patch in
+    /// `patches/`.
     static func applyG6FixSettings(to manager: CGMManagerUI?) {
         guard let transmitter = (manager as? TransmitterManager)?.transmitter else { return }
 
-        transmitter.allowRedundantReconnect = g6FixSetting(allowRedundantReconnectKey, defaultValue: false)
-        transmitter.keepMessagesDuringSubscriptionSetup = g6FixSetting(
-            keepMessagesDuringSubscriptionSetupKey,
-            defaultValue: true
-        )
-        transmitter.recoverMissedAuthentication = g6FixSetting(recoverMissedAuthenticationKey, defaultValue: true)
+        transmitter.skipRedundantReconnect = isG6FixEnabled(skipRedundantReconnectKey)
+        transmitter.keepMessagesDuringSubscriptionSetup = isG6FixEnabled(keepMessagesDuringSetupKey)
+        transmitter.recoverMissedAuthentication = isG6FixEnabled(recoverMissedAuthenticationKey)
     }
 
     var cgmHasValidSensorSession: Bool = false

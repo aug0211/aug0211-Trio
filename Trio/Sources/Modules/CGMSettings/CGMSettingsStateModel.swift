@@ -54,35 +54,31 @@ extension CGMSettings {
         @Published var listOfCGM: [CGMModel] = []
         @Published var url: URL?
 
-        /// G5/G6 Bluetooth fix switches ("G6 Diagnostics"). All on by default; turning one off is for
-        /// testing. Saved across relaunches and applied to the running transmitter immediately.
-        @Published var redundantReconnectFixEnabled = true {
+        /// G5/G6 Bluetooth fix switches ("G6 Diagnostics"). All on by default, and on always means
+        /// the fix is active. Saved across relaunches and applied to the running transmitter immediately.
+        @Published var skipRedundantReconnect = true {
             didSet {
-                guard redundantReconnectFixEnabled != oldValue else { return }
-                saveG6FixSetting(PluginSource.allowRedundantReconnectKey, value: !redundantReconnectFixEnabled)
-                info(.cgm, "G5/G6 redundant reconnect fix turned \(redundantReconnectFixEnabled ? "ON" : "OFF")")
+                g6FixSwitchChanged(PluginSource.skipRedundantReconnectKey, skipRedundantReconnect, oldValue)
             }
         }
 
-        @Published var keepMessagesFixEnabled = true {
+        @Published var keepMessagesDuringSetup = true {
             didSet {
-                guard keepMessagesFixEnabled != oldValue else { return }
-                saveG6FixSetting(PluginSource.keepMessagesDuringSubscriptionSetupKey, value: keepMessagesFixEnabled)
-                info(.cgm, "G5/G6 keep-messages-during-setup fix turned \(keepMessagesFixEnabled ? "ON" : "OFF")")
+                g6FixSwitchChanged(PluginSource.keepMessagesDuringSetupKey, keepMessagesDuringSetup, oldValue)
             }
         }
 
-        @Published var authRecoveryFixEnabled = true {
+        @Published var recoverMissedAuthentication = true {
             didSet {
-                guard authRecoveryFixEnabled != oldValue else { return }
-                saveG6FixSetting(PluginSource.recoverMissedAuthenticationKey, value: authRecoveryFixEnabled)
-                info(.cgm, "G5/G6 missed-authentication recovery turned \(authRecoveryFixEnabled ? "ON" : "OFF")")
+                g6FixSwitchChanged(PluginSource.recoverMissedAuthenticationKey, recoverMissedAuthentication, oldValue)
             }
         }
 
-        private func saveG6FixSetting(_ key: String, value: Bool) {
-            UserDefaults.standard.set(value, forKey: key)
+        private func g6FixSwitchChanged(_ key: String, _ isOn: Bool, _ wasOn: Bool) {
+            guard isOn != wasOn else { return }
+            UserDefaults.standard.set(isOn, forKey: key)
             PluginSource.applyG6FixSettings(to: fetchGlucoseManager?.cgmManager)
+            info(.cgm, "G6 fix \(key) turned \(isOn ? "ON" : "OFF")")
         }
 
         /// True when the active CGM is a Dexcom G5 or G6 read through CGMBLEKit.
@@ -132,12 +128,9 @@ extension CGMSettings {
 
             cgmTransmitterDeviceAddress = UserDefaults.standard.cgmTransmitterDeviceAddress
 
-            redundantReconnectFixEnabled = !PluginSource.g6FixSetting(PluginSource.allowRedundantReconnectKey, defaultValue: false)
-            keepMessagesFixEnabled = PluginSource.g6FixSetting(
-                PluginSource.keepMessagesDuringSubscriptionSetupKey,
-                defaultValue: true
-            )
-            authRecoveryFixEnabled = PluginSource.g6FixSetting(PluginSource.recoverMissedAuthenticationKey, defaultValue: true)
+            skipRedundantReconnect = PluginSource.isG6FixEnabled(PluginSource.skipRedundantReconnectKey)
+            keepMessagesDuringSetup = PluginSource.isG6FixEnabled(PluginSource.keepMessagesDuringSetupKey)
+            recoverMissedAuthentication = PluginSource.isG6FixEnabled(PluginSource.recoverMissedAuthenticationKey)
 
             subscribeSetting(\.smoothGlucose, on: $smoothGlucose, initial: { smoothGlucose = $0 })
         }
