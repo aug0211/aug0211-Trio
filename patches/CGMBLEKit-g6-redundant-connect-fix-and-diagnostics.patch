@@ -418,25 +418,35 @@ index 556bd2e..a75e278 100644
 +        }
 +    }
 +}
-diff --git a/CGMBLEKit/CGMBLEKit/PeripheralManager.swift b/CGMBLEKit/CGMBLEKit/PeripheralManager.swift
-index 8239e10..42a27d4 100644
---- a/CGMBLEKit/CGMBLEKit/PeripheralManager.swift
-+++ b/CGMBLEKit/CGMBLEKit/PeripheralManager.swift
-@@ -91,6 +91,45 @@ extension PeripheralManager {
+diff --git a/CGMBLEKit/CGMBLEKit/PeripheralManager+G5.swift b/CGMBLEKit/CGMBLEKit/PeripheralManager+G5.swift
+index b011452..f08f994 100644
+--- a/CGMBLEKit/CGMBLEKit/PeripheralManager+G5.swift
++++ b/CGMBLEKit/CGMBLEKit/PeripheralManager+G5.swift
+@@ -28,6 +28,16 @@ extension PeripheralManager {
+         try setNotifyValue(enabled, for: characteristic, timeout: timeout)
      }
- }
  
-+extension PeripheralManager {
-+    /// F4: reads the current value of a G5/G6 characteristic.
++    /// F4: reads the current value of a G5/G6 characteristic. Lives in this file because the
++    /// characteristic lookup helpers are private to it.
 +    func readCurrentValue(of characteristicUUID: CGMServiceCharacteristicUUID, timeout: TimeInterval) throws -> Data? {
-+        guard let characteristic = peripheral.getCharacteristicWithUUID(characteristicUUID) else {
++        guard let characteristic = getCharacteristicWithUUID(characteristicUUID) else {
 +            throw PeripheralManagerError.unknownCharacteristic
 +        }
 +
 +        return try readValue(for: characteristic, timeout: timeout)
 +    }
-+}
 +
+     func readMessage<R: TransmitterRxMessage>(
+         for characteristicUUID: CGMServiceCharacteristicUUID,
+         timeout: TimeInterval = 2
+diff --git a/CGMBLEKit/CGMBLEKit/PeripheralManager.swift b/CGMBLEKit/CGMBLEKit/PeripheralManager.swift
+index 8239e10..6fe1468 100644
+--- a/CGMBLEKit/CGMBLEKit/PeripheralManager.swift
++++ b/CGMBLEKit/CGMBLEKit/PeripheralManager.swift
+@@ -91,6 +91,34 @@ extension PeripheralManager {
+     }
+ }
+ 
 +extension PeripheralManager.CommandCondition {
 +    /// F3: true for a pending subscription (notification-state) setup.
 +    var isNotificationStateUpdate: Bool {
@@ -468,7 +478,7 @@ index 8239e10..42a27d4 100644
  protocol PeripheralManagerDelegate: AnyObject {
      func peripheralManager(_ manager: PeripheralManager, didUpdateValueFor characteristic: CBCharacteristic)
  
-@@ -217,6 +256,8 @@ extension PeripheralManager {
+@@ -217,6 +245,8 @@ extension PeripheralManager {
          }
  
          guard signaled else {
@@ -477,7 +487,7 @@ index 8239e10..42a27d4 100644
              throw PeripheralManagerError.timeout
          }
  
-@@ -371,6 +412,11 @@ extension PeripheralManager: CBPeripheralDelegate {
+@@ -371,6 +401,11 @@ extension PeripheralManager: CBPeripheralDelegate {
          }
  
          commandLock.unlock()
@@ -489,7 +499,7 @@ index 8239e10..42a27d4 100644
      }
  
      func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: Error?) {
-@@ -398,6 +444,8 @@ extension PeripheralManager: CBPeripheralDelegate {
+@@ -398,6 +433,8 @@ extension PeripheralManager: CBPeripheralDelegate {
          commandLock.lock()
  
          var notifyDelegate = false
@@ -498,7 +508,7 @@ index 8239e10..42a27d4 100644
  
          if let index = commandConditions.firstIndex(where: { (condition) -> Bool in
              if case .valueUpdate(characteristic: characteristic, matching: let matching) = condition {
-@@ -416,10 +464,38 @@ extension PeripheralManager: CBPeripheralDelegate {
+@@ -416,10 +453,38 @@ extension PeripheralManager: CBPeripheralDelegate {
              macro(self)
          } else if commandConditions.isEmpty {
              notifyDelegate = true // execute after the unlock
