@@ -54,8 +54,8 @@ extension CGMSettings {
         @Published var listOfCGM: [CGMModel] = []
         @Published var url: URL?
 
-        /// G5/G6 switches ("G6 Diagnostics"). All on by default, and on always means the fix or
-        /// diagnostic is active. Saved across relaunches and applied immediately.
+        /// G5/G6 fix switches ("G6 Diagnostics"). All on by default, and on always means the fix is
+        /// active. Saved across relaunches and applied immediately.
         @Published var skipRedundantReconnect = true {
             didSet {
                 g6FixSwitchChanged(PluginSource.skipRedundantReconnectKey, skipRedundantReconnect, oldValue)
@@ -68,9 +68,9 @@ extension CGMSettings {
             }
         }
 
-        @Published var measureShareTiming = true {
+        @Published var shareRetryAfterMiss = true {
             didSet {
-                g6FixSwitchChanged(PluginSource.shareTimingProbeKey, measureShareTiming, oldValue)
+                g6FixSwitchChanged(PluginSource.shareRetryAfterMissKey, shareRetryAfterMiss, oldValue)
             }
         }
 
@@ -130,7 +130,7 @@ extension CGMSettings {
 
             skipRedundantReconnect = PluginSource.isG6FixEnabled(PluginSource.skipRedundantReconnectKey)
             keepMessagesDuringSetup = PluginSource.isG6FixEnabled(PluginSource.keepMessagesDuringSetupKey)
-            measureShareTiming = PluginSource.isG6FixEnabled(PluginSource.shareTimingProbeKey)
+            shareRetryAfterMiss = PluginSource.isG6FixEnabled(PluginSource.shareRetryAfterMissKey)
 
             subscribeSetting(\.smoothGlucose, on: $smoothGlucose, initial: { smoothGlucose = $0 })
         }

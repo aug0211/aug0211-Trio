@@ -110,12 +110,12 @@ extension CGMSettings {
                     Section {
                         Toggle("Prevent Duplicate Connections", isOn: $state.skipRedundantReconnect)
                         Toggle("Keep Messages During Setup", isOn: $state.keepMessagesDuringSetup)
-                        Toggle("Measure Share Timing", isOn: $state.measureShareTiming)
+                        Toggle("Check Share After a Miss", isOn: $state.shareRetryAfterMiss)
                     } header: {
                         Text("G6 Diagnostics")
                     } footer: {
                         Text(
-                            "Dexcom G6 Bluetooth reliability fixes and diagnostics. All are on by default, and on means active. Measure Share Timing only writes to the CGM log export after a missed reading. Turn one off only for a deliberate test. Changes take effect immediately."
+                            "Dexcom G6 Bluetooth reliability fixes. All are on by default, and on means the fix is active. Check Share After a Miss asks Dexcom Share for a reading Bluetooth missed and uses it if Share has it within 20 seconds. Turn one off only for a deliberate test. Changes take effect immediately and are recorded in the CGM log export."
                         )
                     }
                     .listRowBackground(Color.chart)

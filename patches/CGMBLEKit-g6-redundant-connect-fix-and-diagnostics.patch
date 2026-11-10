@@ -1,5 +1,5 @@
 diff --git a/CGMBLEKit/CGMBLEKit/BluetoothManager.swift b/CGMBLEKit/CGMBLEKit/BluetoothManager.swift
-index 556bd2e..59623bb 100644
+index 556bd2e..ebd9ee2 100644
 --- a/CGMBLEKit/CGMBLEKit/BluetoothManager.swift
 +++ b/CGMBLEKit/CGMBLEKit/BluetoothManager.swift
 @@ -133,11 +133,39 @@ class BluetoothManager: NSObject {
@@ -333,7 +333,7 @@ index 556bd2e..59623bb 100644
 +
 +        emit(line)
 +
-+        // Lets Trio react to a session that ended without a reading (Share timing probe)
++        // Lets Trio react to a session that ended without a reading (Share retry after a miss)
 +        if let endedSession = endedSession {
 +            NotificationCenter.default.post(
 +                name: G6SessionDiagnostics.sessionDidEndNotification,

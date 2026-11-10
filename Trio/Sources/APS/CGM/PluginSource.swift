@@ -40,7 +40,7 @@ final class PluginSource: GlucoseSource {
     /// on, and true always means the fix or diagnostic is active.
     static let skipRedundantReconnectKey = "G6FixSkipRedundantReconnect"
     static let keepMessagesDuringSetupKey = "G6FixKeepMessagesDuringSubscriptionSetup"
-    static let shareTimingProbeKey = "G6DiagShareTimingProbe"
+    static let shareRetryAfterMissKey = "G6FixShareRetryAfterMiss"
 
     /// A stored switch. On if it was never set.
     static func isG6FixEnabled(_ key: String) -> Bool {
@@ -59,15 +59,19 @@ final class PluginSource: GlucoseSource {
     /// Must match `G6SessionDiagnostics.sessionDidEndNotification` in the CGMBLEKit patch.
     private static let g6SessionDidEndNotification = Notification.Name("com.loopkit.CGMBLEKit.G6SessionDidEnd")
 
-    /// When the Share timing probe asks Dexcom Share, in seconds after a session ended without a
-    /// reading. Kept well inside the ~30 s of background time iOS usually allows.
-    private static let shareProbeDelays: [TimeInterval] = [5, 12, 20]
+    /// When the Share retry asks Dexcom Share, in seconds after a session ended without a reading.
+    /// Kept well inside the ~30 s of background time iOS usually allows.
+    private static let shareRetryDelays: [TimeInterval] = [5, 12, 20]
 
     /// An attempt that runs this much later than scheduled means iOS suspended Trio in between.
-    private static let shareProbeLateTolerance: TimeInterval = 10
+    private static let shareRetryLateTolerance: TimeInterval = 10
+
+    /// How long the Share retry keeps its background time after storing a reading, so there is no
+    /// gap before glucose storage and the loop take their own.
+    private static let shareRetryHoldAfterStore: TimeInterval = 5
 
     /// Only touched on `processQueue`.
-    private var shareProbeRunning = false
+    private var shareRetryRunning = false
     private var g6SessionObserver: NSObjectProtocol?
 
     var cgmHasValidSensorSession: Bool = false
@@ -262,18 +266,20 @@ final class PluginSource: GlucoseSource {
         return last.addingTimeInterval(intervalsElapsed * Self.dexcomReadingInterval + 10)
     }
 
-    // MARK: - Share timing probe (G5/G6, diagnostic only)
+    // MARK: - Share retry after a missed reading (G5/G6)
 
-    /// When a G5/G6 Bluetooth session ends without a reading, asks Dexcom Share a few times over
-    /// the next 20 s and logs whether Share already has the reading Trio missed, how long that took,
-    /// and how much background time iOS allowed. Logging only: nothing is stored here. The regular
-    /// Share fallback still stores missed readings at the next connection.
+    /// When a G5/G6 Bluetooth session ends without a reading, asks Dexcom Share at +5, +12 and
+    /// +20 s, stopping at the first answer that has the missed reading, and stores it through the
+    /// regular Share fallback path (same date filter, too-frequent filter and history-only rule
+    /// when the next Bluetooth reading is close). Storing a newer reading runs the loop, about
+    /// 4.5 minutes sooner than waiting for the next connection. Every step is logged: Share's
+    /// answer and timing, app and lock state, and background time left.
     ///
     /// Must run on `processQueue`.
     private func g6SessionDidEnd(session: String, glucoseSeen: Bool) {
         dispatchPrecondition(condition: .onQueue(processQueue))
 
-        guard !glucoseSeen, !shareProbeRunning, Self.isG6FixEnabled(Self.shareTimingProbeKey),
+        guard !glucoseSeen, !shareRetryRunning, Self.isG6FixEnabled(Self.shareRetryAfterMissKey),
               let manager = cgmManager as? TransmitterManager
         else { return }
 
@@ -283,26 +289,26 @@ final class PluginSource: GlucoseSource {
             return
         }
 
-        shareProbeRunning = true
+        shareRetryRunning = true
         let endedAt = Date()
         let lastReadingText = lastReading.map { "\($0)" } ?? "none"
-        logCGMDiagnostic("share probe \(session): session ended without a reading; last Bluetooth reading \(lastReadingText)")
+        logCGMDiagnostic("share retry \(session): session ended without a reading; last Bluetooth reading \(lastReadingText)")
 
-        let backgroundTask = ShareProbeBackgroundTask(name: "G6 Share timing probe") { [weak self] in
+        let backgroundTask = ShareRetryBackgroundTask(name: "G6 Share retry after miss") { [weak self] in
             self?.processQueue.async {
-                self?.logCGMDiagnostic("share probe \(session): iOS background time expired")
+                self?.logCGMDiagnostic("share retry \(session): iOS background time expired")
             }
         }
-        logAppState(prefix: "share probe \(session) start")
+        logAppState(prefix: "share retry \(session) start")
 
-        runShareProbe(attempt: 0, manager: manager, session: session, endedAt: endedAt, lastReading: lastReading) { [weak self] in
+        runShareRetry(attempt: 0, manager: manager, session: session, endedAt: endedAt, lastReading: lastReading) { [weak self] in
             backgroundTask.end()
-            self?.shareProbeRunning = false
+            self?.shareRetryRunning = false
         }
     }
 
     /// Must run on `processQueue`. `done` is called on `processQueue`.
-    private func runShareProbe(
+    private func runShareRetry(
         attempt: Int,
         manager: TransmitterManager,
         session: String,
@@ -312,14 +318,14 @@ final class PluginSource: GlucoseSource {
     ) {
         dispatchPrecondition(condition: .onQueue(processQueue))
 
-        guard attempt < Self.shareProbeDelays.count else {
-            let lastDelay = Int(Self.shareProbeDelays.last ?? 0)
-            logCGMDiagnostic("share probe \(session): Share did not have a newer reading by +\(lastDelay) s")
+        guard attempt < Self.shareRetryDelays.count else {
+            let lastDelay = Int(Self.shareRetryDelays.last ?? 0)
+            logCGMDiagnostic("share retry \(session): Share did not have a newer reading by +\(lastDelay) s")
             done()
             return
         }
 
-        let delay = Self.shareProbeDelays[attempt]
+        let delay = Self.shareRetryDelays[attempt]
         let scheduledAt = endedAt.addingTimeInterval(delay)
         processQueue.asyncAfter(deadline: .now() + max(0, scheduledAt.timeIntervalSinceNow)) { [weak self] in
             guard let self = self else {
@@ -328,13 +334,13 @@ final class PluginSource: GlucoseSource {
             }
 
             let lateBy = Date().timeIntervalSince(scheduledAt)
-            if lateBy > Self.shareProbeLateTolerance {
-                self.logCGMDiagnostic("share probe \(session) +\(Int(delay)) s: ran \(Int(lateBy)) s late (Trio was suspended); stopping")
+            if lateBy > Self.shareRetryLateTolerance {
+                self.logCGMDiagnostic("share retry \(session) +\(Int(delay)) s: ran \(Int(lateBy)) s late (Trio was suspended); stopping")
                 done()
                 return
             }
 
-            self.logAppState(prefix: "share probe \(session) +\(Int(delay)) s")
+            self.logAppState(prefix: "share retry \(session) +\(Int(delay)) s")
             let askedAt = Date()
             manager.shareManager.fetchNewDataIfNeeded { [weak self] result in
                 guard let self = self else {
@@ -342,17 +348,21 @@ final class PluginSource: GlucoseSource {
                     return
                 }
                 self.processQueue.async {
-                    let found = self.logShareProbeResult(
+                    let found = self.logShareRetryResult(
                         result,
-                        prefix: "share probe \(session) +\(Int(delay)) s",
+                        prefix: "share retry \(session) +\(Int(delay)) s",
                         askedAt: askedAt,
                         endedAt: endedAt,
                         lastReading: lastReading
                     )
                     if found {
-                        done()
+                        // Same storage path and guards as the regular Share fallback
+                        self.storeShareFallbackReadings(result)
+                        self.processQueue.asyncAfter(deadline: .now() + Self.shareRetryHoldAfterStore) {
+                            done()
+                        }
                     } else {
-                        self.runShareProbe(
+                        self.runShareRetry(
                             attempt: attempt + 1,
                             manager: manager,
                             session: session,
@@ -366,9 +376,9 @@ final class PluginSource: GlucoseSource {
         }
     }
 
-    /// Logs one probe answer. Returns true when Share has a reading newer than the last Bluetooth
-    /// reading, which ends the probe.
-    private func logShareProbeResult(
+    /// Logs one retry answer. Returns true when Share has a reading newer than the last Bluetooth
+    /// reading, which ends the retry.
+    private func logShareRetryResult(
         _ result: CGMReadingResult,
         prefix: String,
         askedAt: Date,
@@ -390,7 +400,7 @@ final class PluginSource: GlucoseSource {
             let afterReading = Int(Date().timeIntervalSince(newest))
             let afterSessionEnd = Int(Date().timeIntervalSince(endedAt))
             logCGMDiagnostic(
-                "\(prefix): Share HAS the missed reading \(newest), \(afterReading) s after its timestamp, \(afterSessionEnd) s after the session ended (\(roundTrip) s)"
+                "\(prefix): Share HAS the missed reading \(newest), \(afterReading) s after its timestamp, \(afterSessionEnd) s after the session ended (\(roundTrip) s); storing it"
             )
             return true
 
@@ -720,9 +730,9 @@ extension PluginSource {
     }
 }
 
-/// Background time for the Share timing probe. Unlike `startBackgroundTask`, it ends itself when
+/// Background time for the Share retry. Unlike `startBackgroundTask`, it ends itself when
 /// iOS expires it, so holding it can never get Trio terminated.
-private final class ShareProbeBackgroundTask {
+private final class ShareRetryBackgroundTask {
     private let lock = NSLock()
     private var taskID: UIBackgroundTaskIdentifier = .invalid
 
