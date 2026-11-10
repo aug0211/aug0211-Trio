@@ -88,7 +88,7 @@ final class PluginSource: GlucoseSource {
         publishCGMStatus()
         Self.applyG6FixSettings(to: cgmManager)
 
-        g6SessionObserver = NotificationCenter.default.addObserver(
+        g6SessionObserver = Foundation.NotificationCenter.default.addObserver(
             forName: Self.g6SessionDidEndNotification,
             object: nil,
             queue: nil
@@ -156,7 +156,7 @@ final class PluginSource: GlucoseSource {
     deinit {
         // dexcomManager.transmitter.stopScanning()
         if let observer = g6SessionObserver {
-            NotificationCenter.default.removeObserver(observer)
+            Foundation.NotificationCenter.default.removeObserver(observer)
         }
     }
 
