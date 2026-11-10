@@ -54,8 +54,8 @@ extension CGMSettings {
         @Published var listOfCGM: [CGMModel] = []
         @Published var url: URL?
 
-        /// G5/G6 Bluetooth fix switches ("G6 Diagnostics"). All on by default, and on always means
-        /// the fix is active. Saved across relaunches and applied to the running transmitter immediately.
+        /// G5/G6 switches ("G6 Diagnostics"). All on by default, and on always means the fix or
+        /// diagnostic is active. Saved across relaunches and applied immediately.
         @Published var skipRedundantReconnect = true {
             didSet {
                 g6FixSwitchChanged(PluginSource.skipRedundantReconnectKey, skipRedundantReconnect, oldValue)
@@ -68,9 +68,9 @@ extension CGMSettings {
             }
         }
 
-        @Published var recoverMissedAuthentication = true {
+        @Published var measureShareTiming = true {
             didSet {
-                g6FixSwitchChanged(PluginSource.recoverMissedAuthenticationKey, recoverMissedAuthentication, oldValue)
+                g6FixSwitchChanged(PluginSource.shareTimingProbeKey, measureShareTiming, oldValue)
             }
         }
 
@@ -130,7 +130,7 @@ extension CGMSettings {
 
             skipRedundantReconnect = PluginSource.isG6FixEnabled(PluginSource.skipRedundantReconnectKey)
             keepMessagesDuringSetup = PluginSource.isG6FixEnabled(PluginSource.keepMessagesDuringSetupKey)
-            recoverMissedAuthentication = PluginSource.isG6FixEnabled(PluginSource.recoverMissedAuthenticationKey)
+            measureShareTiming = PluginSource.isG6FixEnabled(PluginSource.shareTimingProbeKey)
 
             subscribeSetting(\.smoothGlucose, on: $smoothGlucose, initial: { smoothGlucose = $0 })
         }

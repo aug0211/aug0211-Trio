@@ -110,12 +110,12 @@ extension CGMSettings {
                     Section {
                         Toggle("Prevent Duplicate Connections", isOn: $state.skipRedundantReconnect)
                         Toggle("Keep Messages During Setup", isOn: $state.keepMessagesDuringSetup)
-                        Toggle("Recover Missed Authentication", isOn: $state.recoverMissedAuthentication)
+                        Toggle("Measure Share Timing", isOn: $state.measureShareTiming)
                     } header: {
                         Text("G6 Diagnostics")
                     } footer: {
                         Text(
-                            "Dexcom G6 Bluetooth reliability fixes. All three are on by default, and on means the fix is active. Turn one off only for a deliberate test. Changes take effect immediately and are recorded in the CGM log export."
+                            "Dexcom G6 Bluetooth reliability fixes and diagnostics. All are on by default, and on means active. Measure Share Timing only writes to the CGM log export after a missed reading. Turn one off only for a deliberate test. Changes take effect immediately."
                         )
                     }
                     .listRowBackground(Color.chart)

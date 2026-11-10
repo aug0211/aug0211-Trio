@@ -8,6 +8,7 @@ import LibreLoop
 import LibreTransmitter
 import LoopKit
 import LoopKitUI
+import ShareClient
 import SyaiKit
 import UIKit
 
@@ -35,13 +36,13 @@ final class PluginSource: GlucoseSource {
         }
     }
 
-    /// UserDefaults keys for the G5/G6 Bluetooth fix switches in CGM settings ("G6 Diagnostics").
-    /// All three fixes default on, and true always means the fix is active.
+    /// UserDefaults keys for the G5/G6 switches in CGM settings ("G6 Diagnostics"). All default
+    /// on, and true always means the fix or diagnostic is active.
     static let skipRedundantReconnectKey = "G6FixSkipRedundantReconnect"
     static let keepMessagesDuringSetupKey = "G6FixKeepMessagesDuringSubscriptionSetup"
-    static let recoverMissedAuthenticationKey = "G6FixRecoverMissedAuthentication"
+    static let shareTimingProbeKey = "G6DiagShareTimingProbe"
 
-    /// A stored fix switch. On if it was never set.
+    /// A stored switch. On if it was never set.
     static func isG6FixEnabled(_ key: String) -> Bool {
         UserDefaults.standard.object(forKey: key) as? Bool ?? true
     }
@@ -53,8 +54,21 @@ final class PluginSource: GlucoseSource {
 
         transmitter.skipRedundantReconnect = isG6FixEnabled(skipRedundantReconnectKey)
         transmitter.keepMessagesDuringSubscriptionSetup = isG6FixEnabled(keepMessagesDuringSetupKey)
-        transmitter.recoverMissedAuthentication = isG6FixEnabled(recoverMissedAuthenticationKey)
     }
+
+    /// Must match `G6SessionDiagnostics.sessionDidEndNotification` in the CGMBLEKit patch.
+    private static let g6SessionDidEndNotification = Notification.Name("com.loopkit.CGMBLEKit.G6SessionDidEnd")
+
+    /// When the Share timing probe asks Dexcom Share, in seconds after a session ended without a
+    /// reading. Kept well inside the ~30 s of background time iOS usually allows.
+    private static let shareProbeDelays: [TimeInterval] = [5, 12, 20]
+
+    /// An attempt that runs this much later than scheduled means iOS suspended Trio in between.
+    private static let shareProbeLateTolerance: TimeInterval = 10
+
+    /// Only touched on `processQueue`.
+    private var shareProbeRunning = false
+    private var g6SessionObserver: NSObjectProtocol?
 
     var cgmHasValidSensorSession: Bool = false
 
@@ -69,6 +83,19 @@ final class PluginSource: GlucoseSource {
         // didSet doesn't fire from the defining class's own init.
         publishCGMStatus()
         Self.applyG6FixSettings(to: cgmManager)
+
+        g6SessionObserver = NotificationCenter.default.addObserver(
+            forName: Self.g6SessionDidEndNotification,
+            object: nil,
+            queue: nil
+        ) { [weak self] notification in
+            let session = notification.userInfo?["session"] as? String ?? "S?"
+            let glucoseSeen = notification.userInfo?["glucoseSeen"] as? Bool ?? true
+            guard let self = self else { return }
+            self.processQueue.async {
+                self.g6SessionDidEnd(session: session, glucoseSeen: glucoseSeen)
+            }
+        }
     }
 
     /// Republishes the manager's lifecycle/highlight to the subjects.
@@ -124,6 +151,9 @@ final class PluginSource: GlucoseSource {
 
     deinit {
         // dexcomManager.transmitter.stopScanning()
+        if let observer = g6SessionObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
     }
 
     // MARK: - Dexcom Share fallback (G5/G6)
@@ -230,6 +260,172 @@ final class PluginSource: GlucoseSource {
         let elapsed = max(0, Date().timeIntervalSince(last))
         let intervalsElapsed = (elapsed / Self.dexcomReadingInterval).rounded(.down) + 1
         return last.addingTimeInterval(intervalsElapsed * Self.dexcomReadingInterval + 10)
+    }
+
+    // MARK: - Share timing probe (G5/G6, diagnostic only)
+
+    /// When a G5/G6 Bluetooth session ends without a reading, asks Dexcom Share a few times over
+    /// the next 20 s and logs whether Share already has the reading Trio missed, how long that took,
+    /// and how much background time iOS allowed. Logging only: nothing is stored here. The regular
+    /// Share fallback still stores missed readings at the next connection.
+    ///
+    /// Must run on `processQueue`.
+    private func g6SessionDidEnd(session: String, glucoseSeen: Bool) {
+        dispatchPrecondition(condition: .onQueue(processQueue))
+
+        guard !glucoseSeen, !shareProbeRunning, Self.isG6FixEnabled(Self.shareTimingProbeKey),
+              let manager = cgmManager as? TransmitterManager
+        else { return }
+
+        // The short follow-up connection after a good reading is not a miss
+        let lastReading = manager.latestReading?.readDate
+        if let lastReading = lastReading, Date().timeIntervalSince(lastReading) < 270 {
+            return
+        }
+
+        shareProbeRunning = true
+        let endedAt = Date()
+        let lastReadingText = lastReading.map { "\($0)" } ?? "none"
+        logCGMDiagnostic("share probe \(session): session ended without a reading; last Bluetooth reading \(lastReadingText)")
+
+        let backgroundTask = ShareProbeBackgroundTask(name: "G6 Share timing probe") { [weak self] in
+            self?.processQueue.async {
+                self?.logCGMDiagnostic("share probe \(session): iOS background time expired")
+            }
+        }
+        logAppState(prefix: "share probe \(session) start")
+
+        runShareProbe(attempt: 0, manager: manager, session: session, endedAt: endedAt, lastReading: lastReading) { [weak self] in
+            backgroundTask.end()
+            self?.shareProbeRunning = false
+        }
+    }
+
+    /// Must run on `processQueue`. `done` is called on `processQueue`.
+    private func runShareProbe(
+        attempt: Int,
+        manager: TransmitterManager,
+        session: String,
+        endedAt: Date,
+        lastReading: Date?,
+        done: @escaping () -> Void
+    ) {
+        dispatchPrecondition(condition: .onQueue(processQueue))
+
+        guard attempt < Self.shareProbeDelays.count else {
+            let lastDelay = Int(Self.shareProbeDelays.last ?? 0)
+            logCGMDiagnostic("share probe \(session): Share did not have a newer reading by +\(lastDelay) s")
+            done()
+            return
+        }
+
+        let delay = Self.shareProbeDelays[attempt]
+        let scheduledAt = endedAt.addingTimeInterval(delay)
+        processQueue.asyncAfter(deadline: .now() + max(0, scheduledAt.timeIntervalSinceNow)) { [weak self] in
+            guard let self = self else {
+                done()
+                return
+            }
+
+            let lateBy = Date().timeIntervalSince(scheduledAt)
+            if lateBy > Self.shareProbeLateTolerance {
+                self.logCGMDiagnostic("share probe \(session) +\(Int(delay)) s: ran \(Int(lateBy)) s late (Trio was suspended); stopping")
+                done()
+                return
+            }
+
+            self.logAppState(prefix: "share probe \(session) +\(Int(delay)) s")
+            let askedAt = Date()
+            manager.shareManager.fetchNewDataIfNeeded { [weak self] result in
+                guard let self = self else {
+                    done()
+                    return
+                }
+                self.processQueue.async {
+                    let found = self.logShareProbeResult(
+                        result,
+                        prefix: "share probe \(session) +\(Int(delay)) s",
+                        askedAt: askedAt,
+                        endedAt: endedAt,
+                        lastReading: lastReading
+                    )
+                    if found {
+                        done()
+                    } else {
+                        self.runShareProbe(
+                            attempt: attempt + 1,
+                            manager: manager,
+                            session: session,
+                            endedAt: endedAt,
+                            lastReading: lastReading,
+                            done: done
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    /// Logs one probe answer. Returns true when Share has a reading newer than the last Bluetooth
+    /// reading, which ends the probe.
+    private func logShareProbeResult(
+        _ result: CGMReadingResult,
+        prefix: String,
+        askedAt: Date,
+        endedAt: Date,
+        lastReading: Date?
+    ) -> Bool {
+        let roundTrip = String(format: "%.1f", Date().timeIntervalSince(askedAt))
+
+        switch result {
+        case let .newData(samples):
+            guard let newest = samples.map(\.date).max() else {
+                logCGMDiagnostic("\(prefix): Share returned no readings (\(roundTrip) s)")
+                return false
+            }
+            if let lastReading = lastReading, newest <= lastReading.addingTimeInterval(60) {
+                logCGMDiagnostic("\(prefix): Share newest is \(newest), no newer than the last Bluetooth reading (\(roundTrip) s)")
+                return false
+            }
+            let afterReading = Int(Date().timeIntervalSince(newest))
+            let afterSessionEnd = Int(Date().timeIntervalSince(endedAt))
+            logCGMDiagnostic(
+                "\(prefix): Share HAS the missed reading \(newest), \(afterReading) s after its timestamp, \(afterSessionEnd) s after the session ended (\(roundTrip) s)"
+            )
+            return true
+
+        case let .error(error):
+            logCGMDiagnostic("\(prefix): Share fetch failed (\(roundTrip) s): \(error.localizedDescription)")
+            return false
+
+        case .noData:
+            logCGMDiagnostic("\(prefix): Share returned nothing new (\(roundTrip) s)")
+            return false
+
+        case .unreliableData:
+            logCGMDiagnostic("\(prefix): Share returned unreliable data (\(roundTrip) s)")
+            return false
+        }
+    }
+
+    /// Logs app state, lock state and remaining background time. UIKit, so read on the main queue.
+    private func logAppState(prefix: String) {
+        DispatchQueue.main.async { [weak self] in
+            let app = UIApplication.shared
+            let state: String
+            switch app.applicationState {
+            case .active: state = "active"
+            case .inactive: state = "inactive"
+            case .background: state = "background"
+            @unknown default: state = "unknown"
+            }
+            let remaining = app.backgroundTimeRemaining
+            let remainingText = remaining > 1_000_000 ? "unlimited" : String(format: "%.0f s", remaining)
+            let lockText = app.isProtectedDataAvailable ? "unlocked" : "locked"
+            self?.processQueue.async {
+                self?.logCGMDiagnostic("\(prefix): app \(state), phone \(lockText), background time left \(remainingText)")
+            }
+        }
     }
 
     /// Writes a line to the CGM's device log, so it appears in the CGM log export.
@@ -521,5 +717,33 @@ extension PluginSource: CGMManagerDelegate {
 extension PluginSource {
     func sourceInfo() -> [String: Any]? {
         [GlucoseSourceKey.description.rawValue: "Plugin CGM source"]
+    }
+}
+
+/// Background time for the Share timing probe. Unlike `startBackgroundTask`, it ends itself when
+/// iOS expires it, so holding it can never get Trio terminated.
+private final class ShareProbeBackgroundTask {
+    private let lock = NSLock()
+    private var taskID: UIBackgroundTaskIdentifier = .invalid
+
+    init(name: String, onExpire: @escaping () -> Void) {
+        let newID = UIApplication.shared.beginBackgroundTask(withName: name) { [weak self] in
+            onExpire()
+            self?.end()
+        }
+        lock.lock()
+        taskID = newID
+        lock.unlock()
+    }
+
+    func end() {
+        lock.lock()
+        let id = taskID
+        taskID = .invalid
+        lock.unlock()
+
+        if id != .invalid {
+            UIApplication.shared.endBackgroundTask(id)
+        }
     }
 }
