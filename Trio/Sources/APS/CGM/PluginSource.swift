@@ -20,10 +20,7 @@ final class PluginSource: GlucoseSource {
     let cgmProgressHighlight = CurrentValueSubject<DeviceLifecycleProgress?, Never>(nil)
 
     var cgmManager: CGMManagerUI? {
-        didSet {
-            publishCGMStatus()
-            DexcomG6Options.apply(to: cgmManager)
-        }
+        didSet { publishCGMStatus() }
     }
 
     /// Recovers Dexcom G5/G6 readings that Bluetooth missed, from Dexcom Share.
@@ -41,7 +38,6 @@ final class PluginSource: GlucoseSource {
         cgmManager?.cgmManagerDelegate = self
         // didSet doesn't fire from the defining class's own init.
         publishCGMStatus()
-        DexcomG6Options.apply(to: cgmManager)
 
         shareFallback = DexcomShareFallback(
             source: self,

@@ -14,7 +14,7 @@ import UIKit
 /// 2. **Asks Share right after a missed reading.** When a Bluetooth connection ends without a
 ///    reading, it asks Share 5, 12 and 20 seconds later, instead of waiting 5 minutes for the
 ///    next connection. The Dexcom app on the same phone usually has the reading on Share within
-///    15 seconds. Controlled by `DexcomG6Options.checkShareAfterMiss`.
+///    15 seconds.
 ///
 /// Readings are stored through `FetchGlucoseManager.newGlucoseFromCgmManager`, the same path
 /// Bluetooth readings take, so the usual protections apply: a reading only counts as new if it is
@@ -210,9 +210,7 @@ final class DexcomShareFallback {
     private func connectionDidEnd(session: String, receivedGlucose: Bool) {
         dispatchPrecondition(condition: .onQueue(processQueue))
 
-        guard !receivedGlucose, !retryRunning, DexcomG6Options.checkShareAfterMiss,
-              let manager = source?.cgmManager as? TransmitterManager
-        else { return }
+        guard !receivedGlucose, !retryRunning, let manager = source?.cgmManager as? TransmitterManager else { return }
 
         // The short follow-up connection after a good reading is not a miss
         let lastReading = manager.latestReading?.readDate

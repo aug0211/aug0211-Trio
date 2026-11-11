@@ -1,42 +1,32 @@
 diff --git a/CGMBLEKit/CGMBLEKit.xcodeproj/project.pbxproj b/CGMBLEKit/CGMBLEKit.xcodeproj/project.pbxproj
-index 33ad631..01f91f2 100644
+index 33ad631..1b86ca0 100644
 --- a/CGMBLEKit/CGMBLEKit.xcodeproj/project.pbxproj
 +++ b/CGMBLEKit/CGMBLEKit.xcodeproj/project.pbxproj
-@@ -75,6 +75,8 @@
+@@ -75,6 +75,7 @@
  		43CABDF71C3506F100005705 /* CGMBLEKit.h in Headers */ = {isa = PBXBuildFile; fileRef = 43CABDF61C3506F100005705 /* CGMBLEKit.h */; settings = {ATTRIBUTES = (Public, ); }; };
  		43CABDFE1C3506F100005705 /* CGMBLEKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 43CABDF31C3506F100005705 /* CGMBLEKit.framework */; };
  		43CABE121C350B2800005705 /* BluetoothManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43CABE0E1C350B2800005705 /* BluetoothManager.swift */; };
 +		CC34867D937898696222632B /* TransmitterSessionLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B09070D6F7DC9302B3CF0A0 /* TransmitterSessionLog.swift */; };
-+		B525CE13EA998DBE65809F03 /* PassiveModeOptions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 314C792720FDFC16CA8A5D4B /* PassiveModeOptions.swift */; };
  		43CABE131C350B2800005705 /* BluetoothServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43CABE0F1C350B2800005705 /* BluetoothServices.swift */; };
  		43CABE151C350B2800005705 /* Transmitter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43CABE111C350B2800005705 /* Transmitter.swift */; };
  		43CABE231C350B3D00005705 /* AuthRequestRxMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43CABE171C350B3D00005705 /* AuthRequestRxMessage.swift */; };
-@@ -152,6 +154,8 @@
+@@ -152,6 +153,7 @@
  		A9AD3803225EEE850058C179 /* Transmitter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43CABE111C350B2800005705 /* Transmitter.swift */; };
  		A9AD3804225EEE850058C179 /* DisconnectTxMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43CABE1C1C350B3D00005705 /* DisconnectTxMessage.swift */; };
  		A9AD3805225EEE850058C179 /* BluetoothManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43CABE0E1C350B2800005705 /* BluetoothManager.swift */; };
 +		CF7904B1D33143A788A719A7 /* TransmitterSessionLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B09070D6F7DC9302B3CF0A0 /* TransmitterSessionLog.swift */; };
-+		EA9F1F3EB37BEF6EAA6E1750 /* PassiveModeOptions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 314C792720FDFC16CA8A5D4B /* PassiveModeOptions.swift */; };
  		A9AD3806225EEE850058C179 /* TransmitterManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4325E9EC210EAEF500969CE5 /* TransmitterManager.swift */; };
  		A9AD3807225EEE850058C179 /* KeepAliveTxMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43CABE1F1C350B3D00005705 /* KeepAliveTxMessage.swift */; };
  		A9AD3808225EEE850058C179 /* Command.swift in Sources */ = {isa = PBXBuildFile; fileRef = E752B40F2063C31B0063027D /* Command.swift */; };
-@@ -402,6 +406,8 @@
+@@ -402,6 +404,7 @@
  		43CABDFD1C3506F100005705 /* CGMBLEKitTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CGMBLEKitTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
  		43CABE041C3506F100005705 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
  		43CABE0E1C350B2800005705 /* BluetoothManager.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = BluetoothManager.swift; sourceTree = "<group>"; };
 +		0B09070D6F7DC9302B3CF0A0 /* TransmitterSessionLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransmitterSessionLog.swift; sourceTree = "<group>"; };
-+		314C792720FDFC16CA8A5D4B /* PassiveModeOptions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PassiveModeOptions.swift; sourceTree = "<group>"; };
  		43CABE0F1C350B2800005705 /* BluetoothServices.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = BluetoothServices.swift; sourceTree = "<group>"; };
  		43CABE111C350B2800005705 /* Transmitter.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = Transmitter.swift; sourceTree = "<group>"; };
  		43CABE171C350B3D00005705 /* AuthRequestRxMessage.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = AuthRequestRxMessage.swift; sourceTree = "<group>"; };
-@@ -702,12 +708,14 @@
- 				430D64C41CB7846A00FCA750 /* NSData+CRC.swift */,
- 				4323115E1EFC870300B95E62 /* OSLog.swift */,
- 				43D140D02047BD930032346D /* Opcode.swift */,
-+				314C792720FDFC16CA8A5D4B /* PassiveModeOptions.swift */,
- 				43E4B1F11F8AF9790038823E /* PeripheralManager.swift */,
- 				435535D31FB2C1B000CE5A23 /* PeripheralManagerError.swift */,
- 				431CE7661F91D0B300255374 /* PeripheralManager+G5.swift */,
+@@ -708,6 +711,7 @@
  				43CABE111C350B2800005705 /* Transmitter.swift */,
  				4325E9EC210EAEF500969CE5 /* TransmitterManager.swift */,
  				C1614F072AAFD07700F636E5 /* TransmitterManagerState.swift */,
@@ -44,29 +34,27 @@ index 33ad631..01f91f2 100644
  				43CE7CDB1CA77468003CC1B0 /* TransmitterStatus.swift */,
  				43CABDF61C3506F100005705 /* CGMBLEKit.h */,
  				43CABE161C350B2E00005705 /* Messages */,
-@@ -1249,6 +1257,8 @@
+@@ -1249,6 +1253,7 @@
  				43CABE151C350B2800005705 /* Transmitter.swift in Sources */,
  				43CABE281C350B3D00005705 /* DisconnectTxMessage.swift in Sources */,
  				43CABE121C350B2800005705 /* BluetoothManager.swift in Sources */,
-+				B525CE13EA998DBE65809F03 /* PassiveModeOptions.swift in Sources */,
 +				CC34867D937898696222632B /* TransmitterSessionLog.swift in Sources */,
  				4325E9ED210EAEF600969CE5 /* TransmitterManager.swift in Sources */,
  				43CABE2B1C350B3D00005705 /* KeepAliveTxMessage.swift in Sources */,
  				E752B4102063C31B0063027D /* Command.swift in Sources */,
-@@ -1324,6 +1334,8 @@
+@@ -1324,6 +1329,7 @@
  				A9AD3803225EEE850058C179 /* Transmitter.swift in Sources */,
  				A9AD3804225EEE850058C179 /* DisconnectTxMessage.swift in Sources */,
  				A9AD3805225EEE850058C179 /* BluetoothManager.swift in Sources */,
-+				EA9F1F3EB37BEF6EAA6E1750 /* PassiveModeOptions.swift in Sources */,
 +				CF7904B1D33143A788A719A7 /* TransmitterSessionLog.swift in Sources */,
  				A9AD3806225EEE850058C179 /* TransmitterManager.swift in Sources */,
  				A9AD3807225EEE850058C179 /* KeepAliveTxMessage.swift in Sources */,
  				A9AD3808225EEE850058C179 /* Command.swift in Sources */,
 diff --git a/CGMBLEKit/CGMBLEKit/BluetoothManager.swift b/CGMBLEKit/CGMBLEKit/BluetoothManager.swift
-index 556bd2e..4ed0e1d 100644
+index 556bd2e..4df3d7c 100644
 --- a/CGMBLEKit/CGMBLEKit/BluetoothManager.swift
 +++ b/CGMBLEKit/CGMBLEKit/BluetoothManager.swift
-@@ -133,11 +133,39 @@ class BluetoothManager: NSObject {
+@@ -133,11 +133,36 @@ class BluetoothManager: NSObject {
  
      // MARK: - Actions
  
@@ -90,25 +78,22 @@ index 556bd2e..4ed0e1d 100644
 +    /// pending `PeripheralManager` used to discard incoming messages, which is how passive mode
 +    /// lost readings. The state check and the decision happen in one `managerQueue` block, so a
 +    /// `didConnect` can't land between them.
-+    ///
-+    /// - Parameter preventDuplicateConnection: `PassiveModeOptions.preventDuplicateConnections`.
-+    ///   When false, behaves like `scanForPeripheral()`.
-+    func resumeScanning(preventDuplicateConnection: Bool) {
++    func resumeScanning() {
 +        dispatchPrecondition(condition: .notOnQueue(managerQueue))
 +
 +        managerQueue.sync {
 +            let currentState = self.peripheral?.state ?? .disconnected
 +
-+            if currentState == .connecting && preventDuplicateConnection {
++            if currentState == .connecting {
 +                TransmitterSessionLog.shared.reconnectDecision(caller: "resumeScanning", state: currentState.logName, action: "skipped")
 +                return
 +            }
 +
-+            self.managerQueue_scanForPeripheral(caller: preventDuplicateConnection ? "resumeScanning" : "resumeScanning(preventOff)")
++            self.managerQueue_scanForPeripheral(caller: "resumeScanning")
          }
      }
  
-@@ -155,20 +183,25 @@ class BluetoothManager: NSObject {
+@@ -155,20 +180,25 @@ class BluetoothManager: NSObject {
          }
      }
  
@@ -135,7 +120,7 @@ index 556bd2e..4ed0e1d 100644
              self.peripheral = peripheral
              self.manager.connect(peripheral)
          } else if let peripheral = manager.retrieveConnectedPeripherals(withServices: [
-@@ -178,10 +211,12 @@ class BluetoothManager: NSObject {
+@@ -178,10 +208,12 @@ class BluetoothManager: NSObject {
              delegate == nil || delegate!.bluetoothManager(self, shouldConnectPeripheral: peripheral)
          {
              log.debug("Found system-connected peripheral: %{public}@", peripheral.identifier.uuidString)
@@ -148,7 +133,7 @@ index 556bd2e..4ed0e1d 100644
              manager.scanForPeripherals(withServices: [
                      TransmitterServiceUUID.advertisement.cbUUID
                  ],
-@@ -202,7 +237,7 @@ class BluetoothManager: NSObject {
+@@ -202,7 +234,7 @@ class BluetoothManager: NSObject {
          DispatchQueue.global(qos: .utility).async {
              Thread.sleep(forTimeInterval: 2)
  
@@ -157,7 +142,7 @@ index 556bd2e..4ed0e1d 100644
          }
      }
  
-@@ -236,7 +271,7 @@ extension BluetoothManager: CBCentralManagerDelegate {
+@@ -236,7 +268,7 @@ extension BluetoothManager: CBCentralManagerDelegate {
  
          switch central.state {
          case .poweredOn:
@@ -166,7 +151,7 @@ index 556bd2e..4ed0e1d 100644
          case .resetting, .poweredOff, .unauthorized, .unknown, .unsupported:
              fallthrough
          @unknown default:
-@@ -276,6 +311,8 @@ extension BluetoothManager: CBCentralManagerDelegate {
+@@ -276,6 +308,8 @@ extension BluetoothManager: CBCentralManagerDelegate {
          dispatchPrecondition(condition: .onQueue(managerQueue))
  
          log.default("%{public}@: %{public}@", #function, peripheral)
@@ -175,7 +160,7 @@ index 556bd2e..4ed0e1d 100644
          if central.isScanning {
              central.stopScan()
          }
-@@ -290,6 +327,8 @@ extension BluetoothManager: CBCentralManagerDelegate {
+@@ -290,6 +324,8 @@ extension BluetoothManager: CBCentralManagerDelegate {
      func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
          dispatchPrecondition(condition: .onQueue(managerQueue))
          log.default("%{public}@: %{public}@", #function, peripheral)
@@ -184,7 +169,7 @@ index 556bd2e..4ed0e1d 100644
          // Ignore errors indicating the peripheral disconnected remotely, as that's expected behavior
          if let error = error as NSError?, CBError(_nsError: error).code != .peripheralDisconnected {
              log.error("%{public}@: %{public}@", #function, error)
-@@ -307,6 +346,8 @@ extension BluetoothManager: CBCentralManagerDelegate {
+@@ -307,6 +343,8 @@ extension BluetoothManager: CBCentralManagerDelegate {
          dispatchPrecondition(condition: .onQueue(managerQueue))
  
          log.error("%{public}@: %{public}@", #function, String(describing: error))
@@ -193,58 +178,8 @@ index 556bd2e..4ed0e1d 100644
          if let error = error, let peripheralManager = peripheralManager {
              self.delegate?.bluetoothManager(self, peripheralManager: peripheralManager, isReadyWithError: error)
          }
-diff --git a/CGMBLEKit/CGMBLEKit/PassiveModeOptions.swift b/CGMBLEKit/CGMBLEKit/PassiveModeOptions.swift
-new file mode 100644
-index 0000000..f5521c9
---- /dev/null
-+++ b/CGMBLEKit/CGMBLEKit/PassiveModeOptions.swift
-@@ -0,0 +1,44 @@
-+//
-+//  PassiveModeOptions.swift
-+//  CGMBLEKit
-+//
-+
-+import Foundation
-+
-+
-+/// Switches for two passive-mode reliability fixes. Both default on, and `true` always means the
-+/// fix is active.
-+///
-+/// Apps set them through `Transmitter.preventDuplicateConnections` and
-+/// `Transmitter.keepMessagesDuringSetup`. They exist so either fix can be turned off for a
-+/// deliberate comparison without rebuilding.
-+final class PassiveModeOptions {
-+    static let shared = PassiveModeOptions()
-+
-+    private let lockedPreventDuplicateConnections: Locked<Bool> = Locked(true)
-+    private let lockedKeepMessagesDuringSetup: Locked<Bool> = Locked(true)
-+
-+    private init() {}
-+
-+    /// Don't ask CoreBluetooth to connect again while a connection is already pending.
-+    /// See `BluetoothManager.resumeScanning(preventDuplicateConnection:)`.
-+    var preventDuplicateConnections: Bool {
-+        get {
-+            return lockedPreventDuplicateConnections.value
-+        }
-+        set {
-+            lockedPreventDuplicateConnections.value = newValue
-+        }
-+    }
-+
-+    /// Pass on messages that arrive while a subscription is being set up, instead of discarding
-+    /// them. See `PeripheralManager.peripheral(_:didUpdateValueFor:error:)`.
-+    var keepMessagesDuringSetup: Bool {
-+        get {
-+            return lockedKeepMessagesDuringSetup.value
-+        }
-+        set {
-+            lockedKeepMessagesDuringSetup.value = newValue
-+        }
-+    }
-+}
 diff --git a/CGMBLEKit/CGMBLEKit/PeripheralManager.swift b/CGMBLEKit/CGMBLEKit/PeripheralManager.swift
-index 8239e10..cfb14b3 100644
+index 8239e10..c96e3e0 100644
 --- a/CGMBLEKit/CGMBLEKit/PeripheralManager.swift
 +++ b/CGMBLEKit/CGMBLEKit/PeripheralManager.swift
 @@ -91,6 +91,19 @@ extension PeripheralManager {
@@ -297,13 +232,11 @@ index 8239e10..cfb14b3 100644
  
          if let index = commandConditions.firstIndex(where: { (condition) -> Bool in
              if case .valueUpdate(characteristic: characteristic, matching: let matching) = condition {
-@@ -416,10 +438,31 @@ extension PeripheralManager: CBPeripheralDelegate {
+@@ -416,10 +438,29 @@ extension PeripheralManager: CBPeripheralDelegate {
              macro(self)
          } else if commandConditions.isEmpty {
              notifyDelegate = true // execute after the unlock
-+        } else if PassiveModeOptions.shared.keepMessagesDuringSetup,
-+            commandConditions.allSatisfy({ $0.isNotificationStateUpdate })
-+        {
++        } else if commandConditions.allSatisfy({ $0.isNotificationStateUpdate }) {
 +            // Only subscription changes are pending, and they can never be completed by an
 +            // incoming value, so pass the message on instead of discarding it. In passive mode the
 +            // discarded message was sometimes the Dexcom app's "authenticated" message, and without
@@ -330,41 +263,13 @@ index 8239e10..cfb14b3 100644
              // If we weren't expecting this notification, pass it along to the delegate
              delegate?.peripheralManager(self, didUpdateValueFor: characteristic)
 diff --git a/CGMBLEKit/CGMBLEKit/Transmitter.swift b/CGMBLEKit/CGMBLEKit/Transmitter.swift
-index 7c10d41..c08a76a 100644
+index 7c10d41..38788d8 100644
 --- a/CGMBLEKit/CGMBLEKit/Transmitter.swift
 +++ b/CGMBLEKit/CGMBLEKit/Transmitter.swift
-@@ -72,6 +72,38 @@ public final class Transmitter: BluetoothManagerDelegate {
+@@ -72,6 +72,10 @@ public final class Transmitter: BluetoothManagerDelegate {
  
      public var needsExpiryRead: Bool = false
  
-+    // MARK: Passive-mode reliability fixes
-+    // Both default on, and true always means the fix is active. Each change is logged, so log
-+    // exports show which connections ran with which fixes.
-+
-+    /// Don't ask CoreBluetooth to connect again while a connection is already pending.
-+    /// A duplicate request can produce a second `didConnect`, which used to cost the reading.
-+    public var preventDuplicateConnections: Bool {
-+        get {
-+            return PassiveModeOptions.shared.preventDuplicateConnections
-+        }
-+        set {
-+            PassiveModeOptions.shared.preventDuplicateConnections = newValue
-+            TransmitterSessionLog.shared.milestone("preventDuplicateConnections", "\(newValue)")
-+        }
-+    }
-+
-+    /// Pass on messages that arrive while a subscription is being set up, instead of discarding
-+    /// them. The discarded message was sometimes the Dexcom app's "authenticated" message.
-+    public var keepMessagesDuringSetup: Bool {
-+        get {
-+            return PassiveModeOptions.shared.keepMessagesDuringSetup
-+        }
-+        set {
-+            PassiveModeOptions.shared.keepMessagesDuringSetup = newValue
-+            TransmitterSessionLog.shared.milestone("keepMessagesDuringSetup", "\(newValue)")
-+        }
-+    }
-+
 +    /// Whether this connection has subscribed to the control characteristic yet (passive mode).
 +    /// Only touched on the peripheral manager's queue.
 +    private var sessionControlSubscribed = false
@@ -372,16 +277,16 @@ index 7c10d41..c08a76a 100644
      public weak var delegate: TransmitterDelegate?
  
      public weak var commandSource: TransmitterCommandSource?
-@@ -117,7 +149,7 @@ public final class Transmitter: BluetoothManagerDelegate {
+@@ -117,7 +121,7 @@ public final class Transmitter: BluetoothManagerDelegate {
  
      public func resumeScanning() {
          if stayConnected {
 -            bluetoothManager.scanForPeripheral()
-+            bluetoothManager.resumeScanning(preventDuplicateConnection: preventDuplicateConnections)
++            bluetoothManager.resumeScanning()
          }
      }
  
-@@ -146,7 +178,7 @@ public final class Transmitter: BluetoothManagerDelegate {
+@@ -146,7 +150,7 @@ public final class Transmitter: BluetoothManagerDelegate {
              bluetoothManager.stayConnected = newValue
  
              if newValue {
@@ -390,7 +295,7 @@ index 7c10d41..c08a76a 100644
              }
          }
      }
-@@ -168,9 +200,14 @@ public final class Transmitter: BluetoothManagerDelegate {
+@@ -168,9 +172,14 @@ public final class Transmitter: BluetoothManagerDelegate {
          peripheralManager.perform { (peripheral) in
              if self.passiveModeEnabled {
                  self.log.debug("Listening for authentication responses in passive mode")
@@ -405,7 +310,7 @@ index 7c10d41..c08a76a 100644
                      self.delegateQueue.async {
                          self.delegate?.transmitter(self, didError: error)
                      }
-@@ -260,16 +297,20 @@ public final class Transmitter: BluetoothManagerDelegate {
+@@ -260,16 +269,20 @@ public final class Transmitter: BluetoothManagerDelegate {
  
          guard response.count > 0 else { return }
  
@@ -426,7 +331,7 @@ index 7c10d41..c08a76a 100644
                  delegateQueue.async {
                      self.delegate?.transmitter(self, didError: TransmitterError.observationError("Unable to handle glucose control response"))
                  }
-@@ -279,6 +320,7 @@ public final class Transmitter: BluetoothManagerDelegate {
+@@ -279,6 +292,7 @@ public final class Transmitter: BluetoothManagerDelegate {
                  // Subscribe to backfill updates
                  do {
                      try peripheral.listenToCharacteristic(.backfill)
@@ -434,7 +339,7 @@ index 7c10d41..c08a76a 100644
                  } catch let error {
                      self.log.error("Error trying to enable notifications on backfill characteristic: %{public}@", String(describing: error))
                      self.delegateQueue.async {
-@@ -398,8 +440,8 @@ public final class Transmitter: BluetoothManagerDelegate {
+@@ -398,8 +412,8 @@ public final class Transmitter: BluetoothManagerDelegate {
      }
  
      func bluetoothManager(_ manager: BluetoothManager, peripheralManager: PeripheralManager, didReceiveAuthenticationResponse response: Data) {
@@ -444,7 +349,7 @@ index 7c10d41..c08a76a 100644
              self.log.debug("Observed authenticated session. enabling notifications for control characteristic.")
              peripheralManager.perform { (peripheral) in
                  // Stopping updates from authentication simultaneously with Dexcom's app causes CoreBluetooth to get into a weird state.
-@@ -411,21 +453,61 @@ public final class Transmitter: BluetoothManagerDelegate {
+@@ -411,21 +425,61 @@ public final class Transmitter: BluetoothManagerDelegate {
                  }
                  */
  

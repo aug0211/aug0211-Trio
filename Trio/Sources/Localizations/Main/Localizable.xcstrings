@@ -110575,9 +110575,6 @@
         }
       }
     },
-    "Dexcom G6 Bluetooth reliability fixes. All three are on by default, and on means the fix is active. Turn one off only for a deliberate test. Changes take effect immediately and are recorded in the CGM log export." : {
-
-    },
     "Diabetes Data as Calendar Event" : {
       "localizations" : {
         "bg" : {
@@ -147859,9 +147856,6 @@
         }
       }
     },
-    "G6 Diagnostics" : {
-
-    },
     "Garmin" : {
       "localizations" : {
         "bg" : {
@@ -177768,9 +177762,6 @@
           }
         }
       }
-    },
-    "Keep Messages During Setup" : {
-
     },
     "Keep these turned ON in your phone’s settings to ensure you receive Trio Notifications, Critical Alerts, and Time Sensitive Notifications." : {
       "localizations" : {
@@ -239279,9 +239270,6 @@
         }
       }
     },
-    "Prevent Duplicate Connections" : {
-
-    },
     "Preview" : {
 
     },
@@ -250067,9 +250055,6 @@
           }
         }
       }
-    },
-    "Recover Missed Authentication" : {
-
     },
     "Red = Below Range" : {
       "localizations" : {

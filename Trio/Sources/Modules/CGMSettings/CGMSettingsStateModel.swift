@@ -54,43 +54,6 @@ extension CGMSettings {
         @Published var listOfCGM: [CGMModel] = []
         @Published var url: URL?
 
-        /// Dexcom G5/G6 reliability switches. See `DexcomG6Options`.
-        @Published var preventDuplicateConnections = true {
-            didSet {
-                guard preventDuplicateConnections != oldValue else { return }
-                DexcomG6Options.preventDuplicateConnections = preventDuplicateConnections
-                dexcomOptionChanged("Prevent Duplicate Connections", preventDuplicateConnections)
-            }
-        }
-
-        @Published var keepMessagesDuringSetup = true {
-            didSet {
-                guard keepMessagesDuringSetup != oldValue else { return }
-                DexcomG6Options.keepMessagesDuringSetup = keepMessagesDuringSetup
-                dexcomOptionChanged("Keep Messages During Setup", keepMessagesDuringSetup)
-            }
-        }
-
-        @Published var checkShareAfterMiss = true {
-            didSet {
-                guard checkShareAfterMiss != oldValue else { return }
-                DexcomG6Options.checkShareAfterMiss = checkShareAfterMiss
-                dexcomOptionChanged("Check Share After a Miss", checkShareAfterMiss)
-            }
-        }
-
-        /// Applies a changed switch to the running transmitter right away and logs it.
-        private func dexcomOptionChanged(_ name: String, _ isOn: Bool) {
-            DexcomG6Options.apply(to: fetchGlucoseManager?.cgmManager)
-            info(.cgm, "Dexcom G6 option \(name) turned \(isOn ? "on" : "off")")
-        }
-
-        /// True when the active CGM is a Dexcom G5 or G6 read through CGMBLEKit.
-        var isDexcomTransmitterCGM: Bool {
-            let manager = fetchGlucoseManager?.cgmManager
-            return manager is G6CGMManager || manager is G5CGMManager
-        }
-
         var shouldRunDeleteOnSettingsChange = true
 
         override func subscribe() {
@@ -131,10 +94,6 @@ extension CGMSettings {
             }
 
             cgmTransmitterDeviceAddress = UserDefaults.standard.cgmTransmitterDeviceAddress
-
-            preventDuplicateConnections = DexcomG6Options.preventDuplicateConnections
-            keepMessagesDuringSetup = DexcomG6Options.keepMessagesDuringSetup
-            checkShareAfterMiss = DexcomG6Options.checkShareAfterMiss
 
             subscribeSetting(\.smoothGlucose, on: $smoothGlucose, initial: { smoothGlucose = $0 })
         }

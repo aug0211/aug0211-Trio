@@ -106,21 +106,6 @@ extension CGMSettings {
                     }.listRowBackground(Color.chart)
                 }
 
-                if state.cgmCurrent.type == .plugin, state.isDexcomTransmitterCGM {
-                    Section {
-                        Toggle("Prevent Duplicate Connections", isOn: $state.preventDuplicateConnections)
-                        Toggle("Keep Messages During Setup", isOn: $state.keepMessagesDuringSetup)
-                        Toggle("Check Share After a Miss", isOn: $state.checkShareAfterMiss)
-                    } header: {
-                        Text("Dexcom G6 Reliability")
-                    } footer: {
-                        Text(
-                            "Fixes for readings Trio misses when the Dexcom app is on the same phone. All are on by default, and on means the fix is active. Check Share After a Miss asks Dexcom Share for a reading Bluetooth missed and uses it if Share has it within 20 seconds. Turn one off only for a deliberate test. Changes take effect immediately and are recorded in the CGM log export."
-                        )
-                    }
-                    .listRowBackground(Color.chart)
-                }
-
                 SettingInputSection(
                     decimalValue: $decimalPlaceholder,
                     booleanValue: $state.smoothGlucose,

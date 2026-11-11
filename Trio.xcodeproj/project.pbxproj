@@ -835,7 +835,6 @@
 		CE94598729E9E4110047C9C6 /* WatchConfigRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE94598629E9E4110047C9C6 /* WatchConfigRootView.swift */; };
 		CE95BF572BA5F5FE00DC3DE3 /* PluginManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE95BF562BA5F5FE00DC3DE3 /* PluginManager.swift */; };
 		CE95BF5A2BA62E4A00DC3DE3 /* PluginSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE95BF592BA62E4A00DC3DE3 /* PluginSource.swift */; };
-		80096A8CA4EF973E69183C93 /* DexcomG6Options.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F56B771A315DB0CBC4AE540 /* DexcomG6Options.swift */; };
 		3B075E29AD9A284EEABC500A /* DexcomShareFallback.swift in Sources */ = {isa = PBXBuildFile; fileRef = 535EF51A9F083255F15DF319 /* DexcomShareFallback.swift */; };
 		CE95BF5B2BA770C300DC3DE3 /* LoopKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3818AA4C274C26A300843DB3 /* LoopKit.framework */; };
 		CE95BF5C2BA770C300DC3DE3 /* LoopKit.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 3818AA4C274C26A300843DB3 /* LoopKit.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
@@ -2078,7 +2077,6 @@
 		CE95BF4A2BA5CED700DC3DE3 /* LoopKitUI.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; path = LoopKitUI.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		CE95BF562BA5F5FE00DC3DE3 /* PluginManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PluginManager.swift; sourceTree = "<group>"; };
 		CE95BF592BA62E4A00DC3DE3 /* PluginSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PluginSource.swift; sourceTree = "<group>"; };
-		5F56B771A315DB0CBC4AE540 /* DexcomG6Options.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DexcomG6Options.swift; sourceTree = "<group>"; };
 		535EF51A9F083255F15DF319 /* DexcomShareFallback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DexcomShareFallback.swift; sourceTree = "<group>"; };
 		CEB434DB28B8F5B900B70274 /* MKRingProgressView.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; path = MKRingProgressView.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		CEB434E228B8F9DB00B70274 /* BluetoothStateManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BluetoothStateManager.swift; sourceTree = "<group>"; };
@@ -3197,7 +3195,6 @@
 				38569344270B5DFA0002C50D /* CGMType.swift */,
 				38569345270B5DFA0002C50D /* GlucoseSource.swift */,
 				E013D871273AC6FE0014109C /* GlucoseSimulatorSource.swift */,
-				5F56B771A315DB0CBC4AE540 /* DexcomG6Options.swift */,
 				535EF51A9F083255F15DF319 /* DexcomShareFallback.swift */,
 				CE95BF592BA62E4A00DC3DE3 /* PluginSource.swift */,
 				41BEC89F0411CF3EF0F6A61B /* CGMSensorStateLog.swift */,
@@ -5993,7 +5990,6 @@
 				BD47FD1B2D88AB4F0043966B /* OnboardingStateModel.swift in Sources */,
 				3811DE0C25C9D32F00A708ED /* BaseProvider.swift in Sources */,
 				CE95BF5A2BA62E4A00DC3DE3 /* PluginSource.swift in Sources */,
-				80096A8CA4EF973E69183C93 /* DexcomG6Options.swift in Sources */,
 				3B075E29AD9A284EEABC500A /* DexcomShareFallback.swift in Sources */,
 				25726254CCC5496EB7BD95C8 /* CGMSensorStateLog.swift in Sources */,
 				DD21FCB52C6952AD00AF2C25 /* DecimalPickerSettings.swift in Sources */,
