@@ -54,31 +54,35 @@ extension CGMSettings {
         @Published var listOfCGM: [CGMModel] = []
         @Published var url: URL?
 
-        /// G5/G6 fix switches ("G6 Diagnostics"). All on by default, and on always means the fix is
-        /// active. Saved across relaunches and applied immediately.
-        @Published var skipRedundantReconnect = true {
+        /// Dexcom G5/G6 reliability switches. See `DexcomG6Options`.
+        @Published var preventDuplicateConnections = true {
             didSet {
-                g6FixSwitchChanged(PluginSource.skipRedundantReconnectKey, skipRedundantReconnect, oldValue)
+                guard preventDuplicateConnections != oldValue else { return }
+                DexcomG6Options.preventDuplicateConnections = preventDuplicateConnections
+                dexcomOptionChanged("Prevent Duplicate Connections", preventDuplicateConnections)
             }
         }
 
         @Published var keepMessagesDuringSetup = true {
             didSet {
-                g6FixSwitchChanged(PluginSource.keepMessagesDuringSetupKey, keepMessagesDuringSetup, oldValue)
+                guard keepMessagesDuringSetup != oldValue else { return }
+                DexcomG6Options.keepMessagesDuringSetup = keepMessagesDuringSetup
+                dexcomOptionChanged("Keep Messages During Setup", keepMessagesDuringSetup)
             }
         }
 
-        @Published var shareRetryAfterMiss = true {
+        @Published var checkShareAfterMiss = true {
             didSet {
-                g6FixSwitchChanged(PluginSource.shareRetryAfterMissKey, shareRetryAfterMiss, oldValue)
+                guard checkShareAfterMiss != oldValue else { return }
+                DexcomG6Options.checkShareAfterMiss = checkShareAfterMiss
+                dexcomOptionChanged("Check Share After a Miss", checkShareAfterMiss)
             }
         }
 
-        private func g6FixSwitchChanged(_ key: String, _ isOn: Bool, _ wasOn: Bool) {
-            guard isOn != wasOn else { return }
-            UserDefaults.standard.set(isOn, forKey: key)
-            PluginSource.applyG6FixSettings(to: fetchGlucoseManager?.cgmManager)
-            info(.cgm, "G6 fix \(key) turned \(isOn ? "ON" : "OFF")")
+        /// Applies a changed switch to the running transmitter right away and logs it.
+        private func dexcomOptionChanged(_ name: String, _ isOn: Bool) {
+            DexcomG6Options.apply(to: fetchGlucoseManager?.cgmManager)
+            info(.cgm, "Dexcom G6 option \(name) turned \(isOn ? "on" : "off")")
         }
 
         /// True when the active CGM is a Dexcom G5 or G6 read through CGMBLEKit.
@@ -128,9 +132,9 @@ extension CGMSettings {
 
             cgmTransmitterDeviceAddress = UserDefaults.standard.cgmTransmitterDeviceAddress
 
-            skipRedundantReconnect = PluginSource.isG6FixEnabled(PluginSource.skipRedundantReconnectKey)
-            keepMessagesDuringSetup = PluginSource.isG6FixEnabled(PluginSource.keepMessagesDuringSetupKey)
-            shareRetryAfterMiss = PluginSource.isG6FixEnabled(PluginSource.shareRetryAfterMissKey)
+            preventDuplicateConnections = DexcomG6Options.preventDuplicateConnections
+            keepMessagesDuringSetup = DexcomG6Options.keepMessagesDuringSetup
+            checkShareAfterMiss = DexcomG6Options.checkShareAfterMiss
 
             subscribeSetting(\.smoothGlucose, on: $smoothGlucose, initial: { smoothGlucose = $0 })
         }

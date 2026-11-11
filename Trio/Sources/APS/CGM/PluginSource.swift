@@ -8,19 +8,9 @@ import LibreLoop
 import LibreTransmitter
 import LoopKit
 import LoopKitUI
-import ShareClient
 import SyaiKit
-import UIKit
 
 final class PluginSource: GlucoseSource {
-    /// How long to hold Dexcom Share readings before storing them, so a Bluetooth reading from
-    /// the connection that triggered the fetch is stored first (the longest connect-to-disconnect
-    /// in the logs that motivated this was 1.55 s).
-    private static let shareFallbackDelay: TimeInterval = 3
-
-    /// G5/G6 readings arrive every 5 minutes.
-    private static let dexcomReadingInterval: TimeInterval = 5 * 60
-
     private let processQueue = DispatchQueue(label: "CGMPluginSource.processQueue")
     private let glucoseStorage: GlucoseStorage!
     private let deviceLogStore: DeviceLogStore
@@ -32,54 +22,12 @@ final class PluginSource: GlucoseSource {
     var cgmManager: CGMManagerUI? {
         didSet {
             publishCGMStatus()
-            Self.applyG6FixSettings(to: cgmManager)
+            DexcomG6Options.apply(to: cgmManager)
         }
     }
 
-    /// UserDefaults keys for the G5/G6 switches in CGM settings ("G6 Diagnostics"). All default
-    /// on, and true always means the fix or diagnostic is active.
-    static let skipRedundantReconnectKey = "G6FixSkipRedundantReconnect"
-    static let keepMessagesDuringSetupKey = "G6FixKeepMessagesDuringSubscriptionSetup"
-    static let shareRetryAfterMissKey = "G6FixShareRetryAfterMiss"
-
-    /// A stored switch. On if it was never set.
-    static func isG6FixEnabled(_ key: String) -> Bool {
-        UserDefaults.standard.object(forKey: key) as? Bool ?? true
-    }
-
-    /// Applies the CGM settings switches to a G5/G6 transmitter. Requires the CGMBLEKit patch in
-    /// `patches/`.
-    static func applyG6FixSettings(to manager: CGMManagerUI?) {
-        guard let transmitter = (manager as? TransmitterManager)?.transmitter else { return }
-
-        transmitter.skipRedundantReconnect = isG6FixEnabled(skipRedundantReconnectKey)
-        transmitter.keepMessagesDuringSubscriptionSetup = isG6FixEnabled(keepMessagesDuringSetupKey)
-    }
-
-    /// Must match `G6SessionDiagnostics.sessionDidEndNotification` in the CGMBLEKit patch.
-    private static let g6SessionDidEndNotification = Notification.Name("com.loopkit.CGMBLEKit.G6SessionDidEnd")
-
-    /// When the Share retry asks Dexcom Share, in seconds after a session ended without a reading.
-    /// Kept well inside the ~30 s of background time iOS usually allows.
-    private static let shareRetryDelays: [TimeInterval] = [5, 12, 20]
-
-    /// An attempt that runs this much later than scheduled means iOS suspended Trio in between.
-    private static let shareRetryLateTolerance: TimeInterval = 10
-
-    /// Share readings dated further ahead of the phone's clock than this are ignored. A future
-    /// timestamp would make Trio reject real Bluetooth readings until the clock caught up.
-    private static let shareFutureTolerance: TimeInterval = 60
-
-    /// How long the Share retry keeps its background time after storing a reading, so there is no
-    /// gap before glucose storage and the loop take their own.
-    private static let shareRetryHoldAfterStore: TimeInterval = 5
-
-    /// Only touched on `processQueue`.
-    private var shareRetryRunning = false
-    /// The reading time the last retry looked for, so a burst of failed connections in one 5-minute
-    /// cycle asks Share once, not once per connection.
-    private var lastShareRetrySlot: Date?
-    private var g6SessionObserver: NSObjectProtocol?
+    /// Recovers Dexcom G5/G6 readings that Bluetooth missed, from Dexcom Share.
+    private var shareFallback: DexcomShareFallback?
 
     var cgmHasValidSensorSession: Bool = false
 
@@ -93,20 +41,14 @@ final class PluginSource: GlucoseSource {
         cgmManager?.cgmManagerDelegate = self
         // didSet doesn't fire from the defining class's own init.
         publishCGMStatus()
-        Self.applyG6FixSettings(to: cgmManager)
+        DexcomG6Options.apply(to: cgmManager)
 
-        g6SessionObserver = Foundation.NotificationCenter.default.addObserver(
-            forName: Self.g6SessionDidEndNotification,
-            object: nil,
-            queue: nil
-        ) { [weak self] notification in
-            let session = notification.userInfo?["session"] as? String ?? "S?"
-            let glucoseSeen = notification.userInfo?["glucoseSeen"] as? Bool ?? true
-            guard let self = self else { return }
-            self.processQueue.async {
-                self.g6SessionDidEnd(session: session, glucoseSeen: glucoseSeen)
-            }
-        }
+        shareFallback = DexcomShareFallback(
+            source: self,
+            processQueue: processQueue,
+            glucoseStorage: glucoseStorage,
+            deviceLogStore: deviceLogStore
+        )
     }
 
     /// Republishes the manager's lifecycle/highlight to the subjects.
@@ -146,12 +88,11 @@ final class PluginSource: GlucoseSource {
             self.processQueue.async {
                 guard let cgmManager = self.cgmManager else { return }
                 cgmManager.fetchNewDataIfNeeded { [weak self] result in
-                    // The timer's publisher still completes with no values, so it can never
-                    // race a Bluetooth reading. G5/G6 Dexcom Share readings returned here are
-                    // stored separately through newGlucoseFromCgmManager, the same path
-                    // Bluetooth readings use.
+                    // The timer's publisher still completes with no values, so it can never race
+                    // a Bluetooth reading. Dexcom Share readings that the G5/G6 plugin returns here
+                    // are stored by `DexcomShareFallback` instead.
                     promise(.success([]))
-                    self?.handleShareFallbackResult(result, from: cgmManager)
+                    self?.shareFallback?.storeFetchResult(result, from: cgmManager)
                 }
             }
         }
@@ -162,325 +103,6 @@ final class PluginSource: GlucoseSource {
 
     deinit {
         // dexcomManager.transmitter.stopScanning()
-        if let observer = g6SessionObserver {
-            Foundation.NotificationCenter.default.removeObserver(observer)
-        }
-    }
-
-    // MARK: - Dexcom Share fallback (G5/G6)
-
-    /// G5/G6 return Dexcom Share readings only through the `fetchNewDataIfNeeded` completion, and
-    /// only when the last Bluetooth reading is more than 4.5 minutes old. Store them instead of
-    /// discarding them.
-    ///
-    /// After `shareFallbackDelay`, storage decides what each reading is: at or before the last
-    /// stored CGM reading it is backfill (deduplicated within 3.5 minutes, never triggers a loop);
-    /// newer, it is a reading Bluetooth missed and triggers the loop as usual. One exception: if
-    /// the next Bluetooth reading is due within the minimum loop interval, a loop now would make
-    /// that fresh reading's loop be skipped as too soon, so the readings are stored as history only.
-    private func handleShareFallbackResult(_ result: CGMReadingResult, from manager: CGMManagerUI) {
-        guard manager is G6CGMManager || manager is G5CGMManager else { return }
-
-        processQueue.async { [weak self] in
-            guard let self = self else { return }
-
-            switch result {
-            case let .newData(samples):
-                guard let newest = samples.map(\.date).max(), let oldest = samples.map(\.date).min() else { return }
-                self.logCGMDiagnostic(
-                    "share fetch returned \(samples.count) readings \(oldest) to \(newest); storing in \(Int(Self.shareFallbackDelay)) s"
-                )
-
-                let taskName = "Store Dexcom Share fallback readings"
-                let backgroundTaskID = startBackgroundTask(withName: taskName)
-
-                self.processQueue.asyncAfter(deadline: .now() + Self.shareFallbackDelay) { [weak self] in
-                    var taskID = backgroundTaskID
-                    defer { endBackgroundTaskSafely(&taskID, taskName: taskName) }
-
-                    guard let self = self else { return }
-                    self.storeShareFallbackReadings(result)
-                }
-
-            case let .error(error):
-                self.logCGMDiagnostic("share fetch failed: \(error.localizedDescription)")
-
-            case .noData,
-                 .unreliableData:
-                break
-            }
-        }
-    }
-
-    /// Must run on `processQueue`.
-    private func storeShareFallbackReadings(_ result: CGMReadingResult) {
-        dispatchPrecondition(condition: .onQueue(processQueue))
-
-        let fetched: [BloodGlucose]
-        switch readCGMResult(readingResult: result) {
-        case let .success(values):
-            fetched = values
-        case let .failure(error):
-            logCGMDiagnostic("share readings not usable: \(error.localizedDescription)")
-            return
-        }
-
-        let latestAllowed = Date().addingTimeInterval(Self.shareFutureTolerance)
-        let futureCount = fetched.filter { $0.dateString > latestAllowed }.count
-        if futureCount > 0 {
-            logCGMDiagnostic("share ignoring \(futureCount) readings dated more than \(Int(Self.shareFutureTolerance)) s in the future")
-        }
-        let glucose = fetched.filter { $0.dateString <= latestAllowed }
-
-        guard glucose.isNotEmpty else { return }
-
-        let lastStored = glucoseStorage.syncDate()
-        let newerCount = glucose.filter { $0.dateString > lastStored }.count
-
-        // 30 s of slack covers the pump update that runs before a triggered loop starts
-        if newerCount > 0, let nextBluetoothReading = expectedNextBluetoothReading(),
-           nextBluetoothReading.timeIntervalSinceNow < Config.loopInterval + 30
-        {
-            logCGMDiagnostic(
-                "share storing \(glucose.count) readings as history only (\(newerCount) newer than last stored \(lastStored)); next Bluetooth reading due \(nextBluetoothReading)"
-            )
-            Task {
-                do {
-                    try await self.glucoseStorage.backfillGlucose(glucose)
-                } catch {
-                    warning(.cgm, "Storing Dexcom Share history failed", error: error)
-                }
-            }
-            return
-        }
-
-        logCGMDiagnostic(
-            "share storing \(glucose.count) readings (\(newerCount) newer than last stored \(lastStored), rest backfill or duplicate)"
-        )
-        glucoseManager?.newGlucoseFromCgmManager(newGlucose: glucose)
-    }
-
-    /// When the next G5/G6 Bluetooth reading should arrive, from the last one received over
-    /// Bluetooth, allowing 10 seconds for the connection (logs show 6-12 s after the reading's
-    /// timestamp). Nil if there is no Bluetooth reading yet.
-    private func expectedNextBluetoothReading() -> Date? {
-        let lastBluetoothReading: Date?
-        if let manager = cgmManager as? G6CGMManager {
-            lastBluetoothReading = manager.latestReading?.readDate
-        } else if let manager = cgmManager as? G5CGMManager {
-            lastBluetoothReading = manager.latestReading?.readDate
-        } else {
-            lastBluetoothReading = nil
-        }
-
-        guard let last = lastBluetoothReading else { return nil }
-
-        let elapsed = max(0, Date().timeIntervalSince(last))
-        let intervalsElapsed = (elapsed / Self.dexcomReadingInterval).rounded(.down) + 1
-        return last.addingTimeInterval(intervalsElapsed * Self.dexcomReadingInterval + 10)
-    }
-
-    // MARK: - Share retry after a missed reading (G5/G6)
-
-    /// When a G5/G6 Bluetooth session ends without a reading, asks Dexcom Share at +5, +12 and
-    /// +20 s, stopping at the first answer that has the missed reading, and stores it through the
-    /// regular Share fallback path (same date filter, too-frequent filter and history-only rule
-    /// when the next Bluetooth reading is close). Storing a newer reading runs the loop, about
-    /// 4.5 minutes sooner than waiting for the next connection. Every step is logged: Share's
-    /// answer and timing, app and lock state, and background time left.
-    ///
-    /// Must run on `processQueue`.
-    private func g6SessionDidEnd(session: String, glucoseSeen: Bool) {
-        dispatchPrecondition(condition: .onQueue(processQueue))
-
-        guard !glucoseSeen, !shareRetryRunning, Self.isG6FixEnabled(Self.shareRetryAfterMissKey),
-              let manager = cgmManager as? TransmitterManager
-        else { return }
-
-        // The short follow-up connection after a good reading is not a miss
-        let lastReading = manager.latestReading?.readDate
-        if let lastReading = lastReading, Date().timeIntervalSince(lastReading) < 270 {
-            return
-        }
-
-        // Once per missed reading: the reading that should have arrived in this 5-minute cycle
-        let missedSlot = lastReading.map { last -> Date in
-            let cycles = max(1, Int((Date().timeIntervalSince(last) + 30) / Self.dexcomReadingInterval))
-            return last.addingTimeInterval(Double(cycles) * Self.dexcomReadingInterval)
-        }
-        if let missedSlot = missedSlot, missedSlot == lastShareRetrySlot {
-            return
-        }
-        lastShareRetrySlot = missedSlot
-
-        shareRetryRunning = true
-        let endedAt = Date()
-        let lastReadingText = lastReading.map { "\($0)" } ?? "none"
-        logCGMDiagnostic("share retry \(session): session ended without a reading; last Bluetooth reading \(lastReadingText)")
-
-        let backgroundTask = ShareRetryBackgroundTask(name: "G6 Share retry after miss") { [weak self] in
-            self?.processQueue.async {
-                self?.logCGMDiagnostic("share retry \(session): iOS background time expired")
-            }
-        }
-        logAppState(prefix: "share retry \(session) start")
-
-        runShareRetry(attempt: 0, manager: manager, session: session, endedAt: endedAt, lastReading: lastReading) { [weak self] in
-            backgroundTask.end()
-            self?.shareRetryRunning = false
-        }
-    }
-
-    /// Must run on `processQueue`. `done` is called on `processQueue`.
-    private func runShareRetry(
-        attempt: Int,
-        manager: TransmitterManager,
-        session: String,
-        endedAt: Date,
-        lastReading: Date?,
-        done: @escaping () -> Void
-    ) {
-        dispatchPrecondition(condition: .onQueue(processQueue))
-
-        guard attempt < Self.shareRetryDelays.count else {
-            let lastDelay = Int(Self.shareRetryDelays.last ?? 0)
-            logCGMDiagnostic("share retry \(session): Share did not have a newer reading by +\(lastDelay) s")
-            done()
-            return
-        }
-
-        let delay = Self.shareRetryDelays[attempt]
-        let scheduledAt = endedAt.addingTimeInterval(delay)
-        processQueue.asyncAfter(deadline: .now() + max(0, scheduledAt.timeIntervalSinceNow)) { [weak self] in
-            guard let self = self else {
-                done()
-                return
-            }
-
-            let lateBy = Date().timeIntervalSince(scheduledAt)
-            if lateBy > Self.shareRetryLateTolerance {
-                self.logCGMDiagnostic("share retry \(session) +\(Int(delay)) s: ran \(Int(lateBy)) s late (Trio was suspended); stopping")
-                done()
-                return
-            }
-
-            // The regular Share check at connection time (or a late Bluetooth reading) may have
-            // stored the missed reading already
-            let lastStored = self.glucoseStorage.syncDate()
-            if let lastReading = lastReading, lastStored > lastReading.addingTimeInterval(60) {
-                self.logCGMDiagnostic("share retry \(session) +\(Int(delay)) s: missed reading already stored (\(lastStored)); stopping")
-                done()
-                return
-            }
-
-            self.logAppState(prefix: "share retry \(session) +\(Int(delay)) s")
-            let askedAt = Date()
-            manager.shareManager.fetchNewDataIfNeeded { [weak self] result in
-                guard let self = self else {
-                    done()
-                    return
-                }
-                self.processQueue.async {
-                    let found = self.logShareRetryResult(
-                        result,
-                        prefix: "share retry \(session) +\(Int(delay)) s",
-                        askedAt: askedAt,
-                        endedAt: endedAt,
-                        lastReading: lastReading
-                    )
-                    if found {
-                        // Same storage path and guards as the regular Share fallback
-                        self.storeShareFallbackReadings(result)
-                        self.processQueue.asyncAfter(deadline: .now() + Self.shareRetryHoldAfterStore) {
-                            done()
-                        }
-                    } else {
-                        self.runShareRetry(
-                            attempt: attempt + 1,
-                            manager: manager,
-                            session: session,
-                            endedAt: endedAt,
-                            lastReading: lastReading,
-                            done: done
-                        )
-                    }
-                }
-            }
-        }
-    }
-
-    /// Logs one retry answer. Returns true when Share has a reading newer than the last Bluetooth
-    /// reading, which ends the retry.
-    private func logShareRetryResult(
-        _ result: CGMReadingResult,
-        prefix: String,
-        askedAt: Date,
-        endedAt: Date,
-        lastReading: Date?
-    ) -> Bool {
-        let roundTrip = String(format: "%.1f", Date().timeIntervalSince(askedAt))
-
-        switch result {
-        case let .newData(samples):
-            let latestAllowed = Date().addingTimeInterval(Self.shareFutureTolerance)
-            guard let newest = samples.map(\.date).filter({ $0 <= latestAllowed }).max() else {
-                logCGMDiagnostic("\(prefix): Share returned no readings (\(roundTrip) s)")
-                return false
-            }
-            if let lastReading = lastReading, newest <= lastReading.addingTimeInterval(60) {
-                logCGMDiagnostic("\(prefix): Share newest is \(newest), no newer than the last Bluetooth reading (\(roundTrip) s)")
-                return false
-            }
-            let afterReading = Int(Date().timeIntervalSince(newest))
-            let afterSessionEnd = Int(Date().timeIntervalSince(endedAt))
-            logCGMDiagnostic(
-                "\(prefix): Share HAS the missed reading \(newest), \(afterReading) s after its timestamp, \(afterSessionEnd) s after the session ended (\(roundTrip) s); storing it"
-            )
-            return true
-
-        case let .error(error):
-            logCGMDiagnostic("\(prefix): Share fetch failed (\(roundTrip) s): \(error.localizedDescription)")
-            return false
-
-        case .noData:
-            logCGMDiagnostic("\(prefix): Share returned nothing new (\(roundTrip) s)")
-            return false
-
-        case .unreliableData:
-            logCGMDiagnostic("\(prefix): Share returned unreliable data (\(roundTrip) s)")
-            return false
-        }
-    }
-
-    /// Logs app state, lock state and remaining background time. UIKit, so read on the main queue.
-    private func logAppState(prefix: String) {
-        DispatchQueue.main.async { [weak self] in
-            let app = UIApplication.shared
-            let state: String
-            switch app.applicationState {
-            case .active: state = "active"
-            case .inactive: state = "inactive"
-            case .background: state = "background"
-            @unknown default: state = "unknown"
-            }
-            let remaining = app.backgroundTimeRemaining
-            let remainingText = remaining > 1_000_000 ? "unlimited" : String(format: "%.0f s", remaining)
-            let lockText = app.isProtectedDataAvailable ? "unlocked" : "locked"
-            self?.processQueue.async {
-                self?.logCGMDiagnostic("\(prefix): app \(state), phone \(lockText), background time left \(remainingText)")
-            }
-        }
-    }
-
-    /// Writes a line to the CGM's device log, so it appears in the CGM log export.
-    private func logCGMDiagnostic(_ message: String) {
-        guard let pluginIdentifier = cgmManager?.pluginIdentifier else { return }
-        deviceLogStore.log(
-            managerIdentifier: pluginIdentifier,
-            deviceIdentifier: nil,
-            type: .delegate,
-            message: "[G6DIAG] " + message
-        )
     }
 }
 
@@ -586,15 +208,8 @@ extension PluginSource: CGMManagerDelegate {
 
         let lastGlucoseDate = glucoseStorage.lastGlucoseDate()
 
-        // G5/G6 Dexcom Share fallback: Share only returns the last 30 minutes. Let all of them
-        // through, so readings Bluetooth missed are backfilled even after a newer Bluetooth
-        // reading arrived; storage drops duplicates within 3.5 minutes of existing readings.
-        // Scoped to Share inside G5/G6, not Share selected as the CGM itself.
-        if manager.pluginIdentifier == "DexShareClient",
-           cgmManager is G6CGMManager || cgmManager is G5CGMManager,
-           let lastGlucoseDate = lastGlucoseDate
-        {
-            return min(lastGlucoseDate, Date().addingTimeInterval(-31 * 60))
+        if DexcomShareFallback.isShareInsideG5G6(manager, cgmManager: cgmManager), let lastGlucoseDate = lastGlucoseDate {
+            return DexcomShareFallback.earliestShareReadingToAccept(lastGlucoseDate: lastGlucoseDate)
         }
 
         return lastGlucoseDate
@@ -652,7 +267,8 @@ extension PluginSource: CGMManagerDelegate {
         return .unavailable
     }
 
-    private func readCGMResult(readingResult: CGMReadingResult) -> Result<[BloodGlucose], Error> {
+    /// Converts a plugin reading result to Trio's glucose values. Also used by `DexcomShareFallback`.
+    func readCGMResult(readingResult: CGMReadingResult) -> Result<[BloodGlucose], Error> {
         if glucoseManager?.glucoseSource == nil {
             debug(.cgm, "CGM reading received with no glucose source set")
         }
@@ -761,33 +377,5 @@ extension PluginSource: CGMManagerDelegate {
 extension PluginSource {
     func sourceInfo() -> [String: Any]? {
         [GlucoseSourceKey.description.rawValue: "Plugin CGM source"]
-    }
-}
-
-/// Background time for the Share retry. Unlike `startBackgroundTask`, it ends itself when
-/// iOS expires it, so holding it can never get Trio terminated.
-private final class ShareRetryBackgroundTask {
-    private let lock = NSLock()
-    private var taskID: UIBackgroundTaskIdentifier = .invalid
-
-    init(name: String, onExpire: @escaping () -> Void) {
-        let newID = UIApplication.shared.beginBackgroundTask(withName: name) { [weak self] in
-            onExpire()
-            self?.end()
-        }
-        lock.lock()
-        taskID = newID
-        lock.unlock()
-    }
-
-    func end() {
-        lock.lock()
-        let id = taskID
-        taskID = .invalid
-        lock.unlock()
-
-        if id != .invalid {
-            UIApplication.shared.endBackgroundTask(id)
-        }
     }
 }
