@@ -66,12 +66,19 @@ final class PluginSource: GlucoseSource {
     /// An attempt that runs this much later than scheduled means iOS suspended Trio in between.
     private static let shareRetryLateTolerance: TimeInterval = 10
 
+    /// Share readings dated further ahead of the phone's clock than this are ignored. A future
+    /// timestamp would make Trio reject real Bluetooth readings until the clock caught up.
+    private static let shareFutureTolerance: TimeInterval = 60
+
     /// How long the Share retry keeps its background time after storing a reading, so there is no
     /// gap before glucose storage and the loop take their own.
     private static let shareRetryHoldAfterStore: TimeInterval = 5
 
     /// Only touched on `processQueue`.
     private var shareRetryRunning = false
+    /// The reading time the last retry looked for, so a burst of failed connections in one 5-minute
+    /// cycle asks Share once, not once per connection.
+    private var lastShareRetrySlot: Date?
     private var g6SessionObserver: NSObjectProtocol?
 
     var cgmHasValidSensorSession: Bool = false
@@ -209,14 +216,21 @@ final class PluginSource: GlucoseSource {
     private func storeShareFallbackReadings(_ result: CGMReadingResult) {
         dispatchPrecondition(condition: .onQueue(processQueue))
 
-        let glucose: [BloodGlucose]
+        let fetched: [BloodGlucose]
         switch readCGMResult(readingResult: result) {
         case let .success(values):
-            glucose = values
+            fetched = values
         case let .failure(error):
             logCGMDiagnostic("share readings not usable: \(error.localizedDescription)")
             return
         }
+
+        let latestAllowed = Date().addingTimeInterval(Self.shareFutureTolerance)
+        let futureCount = fetched.filter { $0.dateString > latestAllowed }.count
+        if futureCount > 0 {
+            logCGMDiagnostic("share ignoring \(futureCount) readings dated more than \(Int(Self.shareFutureTolerance)) s in the future")
+        }
+        let glucose = fetched.filter { $0.dateString <= latestAllowed }
 
         guard glucose.isNotEmpty else { return }
 
@@ -289,6 +303,16 @@ final class PluginSource: GlucoseSource {
             return
         }
 
+        // Once per missed reading: the reading that should have arrived in this 5-minute cycle
+        let missedSlot = lastReading.map { last -> Date in
+            let cycles = max(1, Int((Date().timeIntervalSince(last) + 30) / Self.dexcomReadingInterval))
+            return last.addingTimeInterval(Double(cycles) * Self.dexcomReadingInterval)
+        }
+        if let missedSlot = missedSlot, missedSlot == lastShareRetrySlot {
+            return
+        }
+        lastShareRetrySlot = missedSlot
+
         shareRetryRunning = true
         let endedAt = Date()
         let lastReadingText = lastReading.map { "\($0)" } ?? "none"
@@ -336,6 +360,15 @@ final class PluginSource: GlucoseSource {
             let lateBy = Date().timeIntervalSince(scheduledAt)
             if lateBy > Self.shareRetryLateTolerance {
                 self.logCGMDiagnostic("share retry \(session) +\(Int(delay)) s: ran \(Int(lateBy)) s late (Trio was suspended); stopping")
+                done()
+                return
+            }
+
+            // The regular Share check at connection time (or a late Bluetooth reading) may have
+            // stored the missed reading already
+            let lastStored = self.glucoseStorage.syncDate()
+            if let lastReading = lastReading, lastStored > lastReading.addingTimeInterval(60) {
+                self.logCGMDiagnostic("share retry \(session) +\(Int(delay)) s: missed reading already stored (\(lastStored)); stopping")
                 done()
                 return
             }
@@ -389,7 +422,8 @@ final class PluginSource: GlucoseSource {
 
         switch result {
         case let .newData(samples):
-            guard let newest = samples.map(\.date).max() else {
+            let latestAllowed = Date().addingTimeInterval(Self.shareFutureTolerance)
+            guard let newest = samples.map(\.date).filter({ $0 <= latestAllowed }).max() else {
                 logCGMDiagnostic("\(prefix): Share returned no readings (\(roundTrip) s)")
                 return false
             }
