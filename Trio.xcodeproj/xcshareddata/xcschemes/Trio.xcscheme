@@ -5,6 +5,25 @@
    <BuildAction
       parallelizeBuildables = "YES"
       buildImplicitDependencies = "YES">
+      <PreActions>
+         <ExecutionAction
+            ActionType = "Xcode.IDEStandardExecutionActionsCore.ExecutionActionType.ShellScriptAction">
+            <ActionContent
+               title = "Apply Local Patches"
+               scriptText = "&quot;${SRCROOT}/scripts/apply-local-patches.sh&quot; apply &gt; &quot;${TMPDIR:-/tmp}/trio-apply-local-patches.log&quot; 2&gt;&amp;1&#10;"
+               shellToInvoke = "/bin/bash">
+               <EnvironmentBuildable>
+                  <BuildableReference
+                     BuildableIdentifier = "primary"
+                     BlueprintIdentifier = "388E595725AD948C0019842D"
+                     BuildableName = "Trio.app"
+                     BlueprintName = "Trio"
+                     ReferencedContainer = "container:Trio.xcodeproj">
+                  </BuildableReference>
+               </EnvironmentBuildable>
+            </ActionContent>
+         </ExecutionAction>
+      </PreActions>
       <BuildActionEntries>
          <BuildActionEntry
             buildForTesting = "YES"
