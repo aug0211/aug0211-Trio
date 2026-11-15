@@ -10,7 +10,7 @@
             ActionType = "Xcode.IDEStandardExecutionActionsCore.ExecutionActionType.ShellScriptAction">
             <ActionContent
                title = "Apply Local Patches"
-               scriptText = "&quot;${SRCROOT}/scripts/apply-local-patches.sh&quot; apply &gt; &quot;${TMPDIR:-/tmp}/trio-apply-local-patches.log&quot; 2&gt;&amp;1&#10;"
+               scriptText = "&quot;${SRCROOT}/scripts/apply-local-patches.sh&quot; apply &gt; &quot;${TMPDIR:-/tmp}/trio-apply-local-patches.log&quot; 2&gt;&amp;1 || true&#10;"
                shellToInvoke = "/bin/bash">
                <EnvironmentBuildable>
                   <BuildableReference

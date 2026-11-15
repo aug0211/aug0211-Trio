@@ -15,14 +15,17 @@
 #               discards changes on its own.
 #
 # Usage: apply-local-patches.sh [apply|verify]
-#   apply   (Trio scheme build pre-action) apply what is missing, always exit 0,
-#           because Xcode ignores pre-action failures anyway.
+#   apply   (Trio scheme build pre-action) apply what is missing. Problems are
+#           only reported by the verify phase; the pre-action itself ignores the
+#           exit status, because a failing pre-action stops the whole archive.
 #   verify  (Trio target build phase) apply what is missing, and fail the build
 #           with a clear message if anything had to be applied or cannot be.
 #           Patched submodules are compiled before this phase runs, so a patch
 #           applied here only takes effect on the next build.
 
-set -u
+# No `set -u`: macOS runs this with bash 3.2, where expanding an empty array
+# ("${list[@]}") under `set -u` is an "unbound variable" error. That failed the
+# browser build whenever every patch was already applied.
 
 mode="${1:-verify}"
 root="${SRCROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
@@ -60,7 +63,7 @@ for patch in "${patches[@]}"; do
     fi
 done
 
-for patch in "${conflicts[@]}"; do
+for patch in ${conflicts[@]+"${conflicts[@]}"}; do
     dirs=$(patch_dirs "$patch")
     echo "error: $patch does not apply to ${dirs//$'\n'/, }. An older version of the patch, or other changes, are probably still there."
     echo "error: To reset and re-apply, run from the repository root (this discards any changes inside ${dirs//$'\n'/, }):"
