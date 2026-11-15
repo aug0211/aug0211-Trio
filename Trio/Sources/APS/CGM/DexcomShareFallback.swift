@@ -100,7 +100,10 @@ final class DexcomShareFallback {
             switch result {
             case let .newData(samples):
                 guard let newest = samples.map(\.date).max(), let oldest = samples.map(\.date).min() else { return }
-                self.log("share fetch returned \(samples.count) readings \(oldest) to \(newest); storing in \(Int(Self.storeDelay)) s")
+                self
+                    .log(
+                        "share fetch returned \(samples.count) readings \(oldest) to \(newest); storing in \(Int(Self.storeDelay)) s"
+                    )
 
                 let taskName = "Store Dexcom Share readings"
                 let backgroundTaskID = startBackgroundTask(withName: taskName)
@@ -171,7 +174,9 @@ final class DexcomShareFallback {
         if newerCount > 0, let nextBluetoothReading = expectedNextBluetoothReading(),
            nextBluetoothReading.timeIntervalSinceNow < Config.loopInterval + 30
         {
-            log("share storing \(glucose.count) readings as history only (\(newerCount) newer than last stored \(lastStored)); next Bluetooth reading due \(nextBluetoothReading)")
+            log(
+                "share storing \(glucose.count) readings as history only (\(newerCount) newer than last stored \(lastStored)); next Bluetooth reading due \(nextBluetoothReading)"
+            )
             Task {
                 do {
                     try await self.glucoseStorage.backfillGlucose(glucose)
@@ -182,7 +187,9 @@ final class DexcomShareFallback {
             return
         }
 
-        log("share storing \(glucose.count) readings (\(newerCount) newer than last stored \(lastStored), rest backfill or duplicate)")
+        log(
+            "share storing \(glucose.count) readings (\(newerCount) newer than last stored \(lastStored), rest backfill or duplicate)"
+        )
         source.glucoseManager?.newGlucoseFromCgmManager(newGlucose: glucose)
     }
 
@@ -232,7 +239,9 @@ final class DexcomShareFallback {
         let endedAt = Date()
         let lastReadingText = lastReading.map { "\($0)" } ?? "none"
         let missedReadingText = missedReading.map { "\($0)" } ?? "unknown"
-        log("share retry \(session): session ended without a reading; last Bluetooth reading \(lastReadingText), missed reading due \(missedReadingText)")
+        log(
+            "share retry \(session): session ended without a reading; last Bluetooth reading \(lastReadingText), missed reading due \(missedReadingText)"
+        )
 
         let backgroundTask = SelfEndingBackgroundTask(name: "Check Dexcom Share after a missed reading") { [weak self] in
             self?.processQueue.async {
@@ -366,7 +375,9 @@ final class DexcomShareFallback {
             }
             let afterReading = Int(Date().timeIntervalSince(newest))
             let afterSessionEnd = Int(Date().timeIntervalSince(endedAt))
-            log("\(prefix): Share HAS the missed reading \(newest), \(afterReading) s after its timestamp, \(afterSessionEnd) s after the session ended (\(roundTrip) s); storing it")
+            log(
+                "\(prefix): Share HAS the missed reading \(newest), \(afterReading) s after its timestamp, \(afterSessionEnd) s after the session ended (\(roundTrip) s); storing it"
+            )
             return true
 
         case let .error(error):
