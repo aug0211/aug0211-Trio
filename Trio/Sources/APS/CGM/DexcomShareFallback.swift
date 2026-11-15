@@ -231,7 +231,8 @@ final class DexcomShareFallback {
         retryRunning = true
         let endedAt = Date()
         let lastReadingText = lastReading.map { "\($0)" } ?? "none"
-        log("share retry \(session): session ended without a reading; last Bluetooth reading \(lastReadingText)")
+        let missedReadingText = missedReading.map { "\($0)" } ?? "unknown"
+        log("share retry \(session): session ended without a reading; last Bluetooth reading \(lastReadingText), missed reading due \(missedReadingText)")
 
         let backgroundTask = SelfEndingBackgroundTask(name: "Check Dexcom Share after a missed reading") { [weak self] in
             self?.processQueue.async {
@@ -240,13 +241,25 @@ final class DexcomShareFallback {
         }
         logAppState(prefix: "share retry \(session) start")
 
-        retry(attempt: 0, manager: manager, session: session, endedAt: endedAt, lastReading: lastReading) { [weak self] in
+        retry(attempt: 0, manager: manager, session: session, endedAt: endedAt, missedReading: missedReading) { [weak self] in
             backgroundTask.end()
             self?.retryRunning = false
         }
     }
 
+    /// True when a reading dated `date` is the missed reading or a newer one. Readings land within
+    /// a few seconds of their 5-minute slot, so anything past the midpoint before the slot counts.
+    ///
+    /// Compared against the missed reading, not the last Bluetooth reading: after two misses in a
+    /// row, the first one may already have come from Share, and it must not end the search for the
+    /// second.
+    private static func reaches(_ date: Date, missedReading: Date) -> Bool {
+        date > missedReading.addingTimeInterval(-readingInterval / 2)
+    }
+
     /// One attempt, then the next, until Share has the reading or the attempts run out.
+    /// `missedReading` is nil when there has been no Bluetooth reading yet; then any Share reading
+    /// counts.
     ///
     /// Must run on `processQueue`. `done` is called on `processQueue`.
     private func retry(
@@ -254,7 +267,7 @@ final class DexcomShareFallback {
         manager: TransmitterManager,
         session: String,
         endedAt: Date,
-        lastReading: Date?,
+        missedReading: Date?,
         done: @escaping () -> Void
     ) {
         dispatchPrecondition(condition: .onQueue(processQueue))
@@ -285,7 +298,7 @@ final class DexcomShareFallback {
 
             // The regular Share fetch at connection time often stores the reading first
             let lastStored = self.glucoseStorage.syncDate()
-            if let lastReading = lastReading, lastStored > lastReading.addingTimeInterval(60) {
+            if let missedReading = missedReading, Self.reaches(lastStored, missedReading: missedReading) {
                 self.log("\(prefix): missed reading already stored (\(lastStored)); stopping")
                 done()
                 return
@@ -301,7 +314,13 @@ final class DexcomShareFallback {
                 }
 
                 self.processQueue.async {
-                    let found = self.logRetryAnswer(result, prefix: prefix, askedAt: askedAt, endedAt: endedAt, lastReading: lastReading)
+                    let found = self.logRetryAnswer(
+                        result,
+                        prefix: prefix,
+                        askedAt: askedAt,
+                        endedAt: endedAt,
+                        missedReading: missedReading
+                    )
 
                     if found {
                         self.store(result)
@@ -314,7 +333,7 @@ final class DexcomShareFallback {
                             manager: manager,
                             session: session,
                             endedAt: endedAt,
-                            lastReading: lastReading,
+                            missedReading: missedReading,
                             done: done
                         )
                     }
@@ -323,14 +342,14 @@ final class DexcomShareFallback {
         }
     }
 
-    /// Logs Share's answer to one attempt. Returns true when Share has a reading newer than the
-    /// last Bluetooth reading.
+    /// Logs Share's answer to one attempt. Returns true when Share has the missed reading or a
+    /// newer one.
     private func logRetryAnswer(
         _ result: CGMReadingResult,
         prefix: String,
         askedAt: Date,
         endedAt: Date,
-        lastReading: Date?
+        missedReading: Date?
     ) -> Bool {
         let roundTrip = String(format: "%.1f", Date().timeIntervalSince(askedAt))
 
@@ -341,8 +360,8 @@ final class DexcomShareFallback {
                 log("\(prefix): Share returned no readings (\(roundTrip) s)")
                 return false
             }
-            if let lastReading = lastReading, newest <= lastReading.addingTimeInterval(60) {
-                log("\(prefix): Share newest is \(newest), no newer than the last Bluetooth reading (\(roundTrip) s)")
+            if let missedReading = missedReading, !Self.reaches(newest, missedReading: missedReading) {
+                log("\(prefix): Share newest is \(newest), older than the missed reading due \(missedReading) (\(roundTrip) s)")
                 return false
             }
             let afterReading = Int(Date().timeIntervalSince(newest))
